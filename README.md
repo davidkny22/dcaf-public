@@ -309,7 +309,7 @@ Candidates then pass through a **seven-phase ablation protocol** (§11) — indi
 ## Installation
 
 ```bash
-git clone https://github.com/davidkogan/dcaf-public.git
+git clone https://github.com/davidkny22/dcaf-public.git
 cd dcaf-public
 pip install -e .
 ```
@@ -390,6 +390,6 @@ See [docs/roadmap.md](docs/roadmap.md) for implemented vs. planned features. Key
   author = {Kogan, David},
   title = {{DCAF}: Differential Circuit Analysis Framework},
   year = {2026},
-  url = {https://github.com/davidkogan/dcaf-public}
+  url = {https://github.com/davidkny22/dcaf-public}
 }
 ```
