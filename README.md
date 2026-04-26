@@ -8,6 +8,8 @@
 
 Current circuit discovery methods produce inconsistent results — different techniques with different hyperparameters yield different circuits ([Zhang & Nanda, ICLR 2024](https://arxiv.org/abs/2310.15154)). DCAF addresses this by treating each training signal as a controlled perturbation experiment and requiring **convergent evidence** across weight deltas, activation patterns, and latent geometry. If 10 independent training signals agree on a circuit, it's robust to methodology choice. Backed by a [62-page formal specification](docs/spec.pdf) with 200+ definitions.
 
+*This project began as my first exploration of machine learning and mechanistic interpretability. I dove deep into the literature, synthesized ideas from across circuit discovery, representation engineering, sparse autoencoders, and causal abstraction, and built a complete formal framework from what I learned. It reflects both a working research tool and the process of understanding a field from first principles by building, not just reading.*
+
 ## Quick Start
 
 ```python
