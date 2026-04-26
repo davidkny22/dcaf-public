@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dcaf"
+version = "0.1.0"
+description = "Differential Circuit Analysis Framework — Architecture-agnostic neural circuit discovery"
+readme = "README.md"
+license = "AGPL-3.0-only"
+requires-python = ">=3.10"
+authors = [{ name = "David Kogan" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "trl>=0.7.0",
+    "datasets>=2.12.0",
+    "numpy>=1.21.0",
+    "peft>=0.5.0",
+    "accelerate>=0.20.0",
+    "tqdm>=4.60.0",
+]
+
+[project.optional-dependencies]
+interpretability = ["transformer-lens>=1.0.0"]
+dev = ["pytest>=7.0", "ruff>=0.1.0"]
+
+[project.scripts]
+dcaf = "dcaf.cli.cli:main"
+dcaf-train = "dcaf.cli.train:main"
+dcaf-discover = "dcaf.cli.discover:main"
+dcaf-analyze = "dcaf.cli.analyze:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
