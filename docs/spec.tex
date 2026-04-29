@@ -1135,89 +1135,8 @@ C^{(k)}_G = \text{LRS}^{(k)} \cdot \text{gen}^{(k)}
 \end{equation}
 \end{definition}
 
-\subsection{Nonlinear Diagnostics}
-\label{sec:nonlinear-diagnostics}
-
-When the Linear Representation Score is low ($\text{LRS}^{(k)} < \tau_{\text{nonlinear}}$, default $\tau_{\text{nonlinear}} = 0.4$), the behavioral representation at component $k$ may be nonlinear---gated, distributed, or interaction-dependent. Rather than discarding the component, DCAF triggers a suite of nonlinear diagnostic methods to characterize the representation.
-
-\begin{definition}[Nonlinear Diagnostic Trigger]
-For component $k$, nonlinear diagnostics are triggered when:
-\begin{equation}
-\text{LRS}^{(k)} < \tau_{\text{nonlinear}}
-\end{equation}
-The diagnostics are purely informational---they characterize the nature of the nonlinearity without altering confidence scores or candidate status. A component with low LRS may still be high-confidence through weight and activation evidence.
-\end{definition}
-
-\begin{definition}[PaCMAP Embedding Diagnostics]
-\label{def:pacmap-diagnostics}
-Compute PaCMAP embeddings in two modes:
-\begin{enumerate}[nosep]
-\item \textbf{Raw activations:} Embed $A^{(k)} \in \mathbb{R}^{n \times d_k}$ into $\mathbb{R}^2$. Compute silhouette score $s_{\text{raw}}^{(k)}$ measuring how well behavioral classes ($T^+$ vs $T^-$ examples) cluster in the embedding.
-\item \textbf{Activation deltas:} Embed $\Delta A^{(k)} = A^{(k)}_{\text{peak}} - A^{(k)}_{\text{pre}}$ into $\mathbb{R}^2$. Compute silhouette score $s_{\Delta}^{(k)}$ measuring whether training-induced changes separate by behavioral class.
-\end{enumerate}
-High silhouette scores ($s > 0.5$) despite low LRS indicate that the behavioral representation exists but is nonlinear---the classes are separable in the full activation space but not along any single direction.
-\end{definition}
-
-\begin{definition}[Procrustes Alignment]
-\label{def:procrustes}
-The structural mirror score measures whether $T^+$ and $T^-$ activation patterns share the same geometric structure (reflected):
-\begin{equation}
-\text{SMS}^{(k)} = 1 - \frac{\text{disparity}(\hat{A}^+, \hat{A}^-)}{\text{disparity}_{\text{baseline}}}
-\end{equation}
-where $\hat{A}^+, \hat{A}^-$ are the PaCMAP embeddings of $T^+$ and $T^-$ activations respectively, $\text{disparity}(\cdot, \cdot)$ is the Procrustes disparity after optimal rotation, reflection, and scaling, and $\text{disparity}_{\text{baseline}}$ is the expected disparity between random point clouds. $\text{SMS} \approx 1$: target and opposite behaviors produce mirror-image activation patterns. $\text{SMS} \approx 0$: unrelated geometric structures.
-\end{definition}
-
-\begin{definition}[Polynomial Probing]
-\label{def:polynomial-probing}
-Train degree-2 polynomial probes and compare to linear probes:
-\begin{equation}
-\text{poly\_gap}^{(k)} = \text{acc}_{\text{poly2}}^{(k)} - \text{acc}_{\text{linear}}^{(k)}
-\end{equation}
-where $\text{acc}_{\text{poly2}}$ is the accuracy of a degree-2 polynomial probe (capturing pairwise feature interactions) and $\text{acc}_{\text{linear}}$ is the accuracy of a linear probe, both on held-out data. A large poly\_gap ($> 0.1$) indicates the behavior depends on feature interactions rather than individual feature values.
-
-From the trained degree-2 polynomial probe, extract the top interaction terms by coefficient magnitude. For each cross-term $x_i \cdot x_j$ in the polynomial feature expansion, the learned coefficient $w_{ij}$ indicates how strongly that dimension pair contributes to behavioral classification. Report as a ranked list of $(i, j, w_{ij})$ triples for the top-$n$ interactions (by $|w_{ij}|$). These identify which pairs of activation dimensions interact to encode the behavior, providing interpretable structure beyond the aggregate $\text{poly\_gap}$ metric.
-\end{definition}
-
-\begin{remark}[Interaction Term Concentration]
-When a small number of interaction terms dominate (e.g., top 2--3 terms account for $>$50\% of the poly\_gap improvement), the nonlinear encoding has localized structure amenable to further investigation. When many terms contribute roughly equally, the encoding is more distributed.
-\end{remark}
-
-\begin{definition}[Kernel LDA]
-Apply kernel LDA with an RBF kernel to the activation space at component $k$:
-\begin{equation}
-d^{(k)}_{\text{kernel}} = \text{KernelLDA}(A^+(k), A^-(k))
-\end{equation}
-This produces a nonlinear discriminant that may separate classes where linear LDA fails. Kernel LDA is diagnostic only: it identifies components where behavior is nonlinearly encoded but does not produce a steering vector (nonlinear directions cannot be directly injected). Components identified by kernel LDA but not linear LDA are flagged for further investigation.
-
-The kernel gap metric:
-\begin{equation}
-\text{kernel\_gap}^{(k)} = \text{acc}_{\text{kernel}}^{(k)} - \text{acc}_{\text{linear}}^{(k)}
-\end{equation}
-This is the kernel-space analog of $\text{poly\_gap}$. A large $\text{kernel\_gap}$ indicates nonlinear encoding that quadratic features alone may not capture (the RBF kernel has infinite effective feature expansion).
-\end{definition}
-
-\begin{remark}[Joint Interpretation of Polynomial and Kernel Gaps]
-The two gap metrics jointly characterize the nature of nonlinear encoding:
-\begin{itemize}[nosep]
-\item High poly\_gap, low kernel\_gap: behavior encoded through pairwise feature interactions---quadratic features suffice.
-\item Low poly\_gap, high kernel\_gap: behavior requires higher-order or non-polynomial nonlinearities.
-\item Both high: strong nonlinear encoding through multiple mechanisms.
-\item Both low: linear methods capture the representation (LRS should be high; if LRS is also low, the component may not encode the behavior at all).
-\end{itemize}
-\end{remark}
-
-\begin{remark}[Nonlinear Diagnostics Aggregation]
-The diagnostic methods are aggregated into a single structure for each triggered component:
-\begin{align}
-\text{NonlinearDiag}(k) = \bigl(&s_{\text{raw}}^{(k)},\; s_{\Delta}^{(k)},\; \text{SMS}^{(k)},\; \text{poly\_gap}^{(k)},\; \text{acc}_{\text{kernel}}^{(k)},\; \text{kernel\_gap}^{(k)}\bigr)
-\end{align}
-Common patterns:
-\begin{itemize}[nosep]
-\item \textbf{High silhouette, high poly\_gap:} Behavior encoded through feature interactions---look for gating mechanisms.
-\item \textbf{High SMS:} Target and opposite are geometric mirrors---the component implements a switchable circuit.
-\item \textbf{High kernel accuracy, low linear accuracy:} Strong nonlinear encoding---the behavior is ``hidden'' from linear methods but present.
-\item \textbf{All low:} Component may not encode the behavior at all; weight/activation evidence may be indirect.
-\end{itemize}
+\begin{remark}[Nonlinear Diagnostics]
+When $\text{LRS}^{(k)} < \tau_{\text{nonlinear}} = 0.4$, the behavioral representation may be nonlinear. DCAF triggers a suite of diagnostic methods---PaCMAP embedding with silhouette scoring, Procrustes alignment (structural mirror score), degree-2 polynomial probing, and kernel LDA---to characterize the nonlinearity without altering confidence scores or candidate status. Full definitions appear in Appendix~\ref{app:nonlinear}.
 \end{remark}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1326,7 +1245,7 @@ After consensus extraction, assess whether the behavior is single-direction or m
 \text{nonlinear} & \text{if } \text{DCS}(L) < 0.4 \text{ with adequate signal effectiveness}
 \end{cases}
 \end{equation}
-where $\text{PCA}_1$ is the fraction of variance explained by the first principal component. For $\text{multi\_direction}$, report $n_{\text{directions}}$ = number of PCs needed for 90\% cumulative variance; each PC receives its own DCS validation and composition analysis. For $\text{nonlinear}$, trigger nonlinear diagnostics (\S\ref{sec:nonlinear-diagnostics}).
+where $\text{PCA}_1$ is the fraction of variance explained by the first principal component. For $\text{multi\_direction}$, report $n_{\text{directions}}$ = number of PCs needed for 90\% cumulative variance; each PC receives its own DCS validation and composition analysis. For $\text{nonlinear}$, trigger nonlinear diagnostics (\S\ref{app:nonlinear}).
 \end{definition}
 
 \subsubsection{Layer Trajectory Analysis}
@@ -1480,34 +1399,6 @@ All failure modes are reported as output fields, never silent failures:
 \item \texttt{composition\_gap}: $\text{fidelity} < \tau_{\text{fidelity}}$. Confirmed circuit does not fully explain the global direction. Favor global steering over component-level steering.
 \item \texttt{composition\_balance: `suppression\_dominant'}: Total negative contribution exceeds total positive. Default model behavior is to suppress; specific components override.
 \end{itemize}
-\end{remark}
-
-\subsection{Parametric Embedding}
-\label{sec:parametric-embedding}
-
-\begin{remark}[Optional Extension]
-Parametric embedding is computationally expensive. It is appropriate when deep visualization of activation geometry is required, and may be omitted without affecting confidence scores or candidate selection.
-\end{remark}
-
-\begin{definition}[Parametric Embedding]
-Train a parametric function $f_\theta: \mathbb{R}^{d_k} \to \mathbb{R}^2$ to minimize PaCMAP loss on the training activations:
-\begin{equation}
-\theta^* = \arg\min_\theta \;\mathcal{L}_{\text{PaCMAP}}\bigl(\{f_\theta(a_j)\}_{j=1}^n,\; \{a_j\}_{j=1}^n\bigr)
-\end{equation}
-Unlike standard PaCMAP (which produces fixed coordinates for a fixed set of points), the parametric version learns a mapping function that generalizes to unseen activations. This enables:
-\begin{enumerate}[nosep]
-\item \textbf{Embedding new points:} Compute $f_{\theta^*}(a_{\text{new}})$ for any new activation without re-running the full embedding.
-\item \textbf{Consistent coordinates:} Pre- and peak-checkpoint activations are embedded in the same coordinate system, enabling direct visual comparison of how training moved representations.
-\item \textbf{Generalization testing:} Embed held-out activations and measure whether behavioral class separation transfers, providing an independent generalization signal.
-\end{enumerate}
-\end{definition}
-
-\begin{remark}[Generalization Evaluation]
-Split activations into train and held-out sets. Train $f_\theta$ on the training split. Compute silhouette scores on both:
-\begin{equation}
-\text{gen}_{\text{embed}}^{(k)} = \frac{s_{\text{held-out}}^{(k)}}{s_{\text{train}}^{(k)}}
-\end{equation}
-$\text{gen}_{\text{embed}} \approx 1$: embedding captures a generalizable structure. $\text{gen}_{\text{embed}} \ll 1$: embedding overfits to training activations.
 \end{remark}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -3264,6 +3155,119 @@ With dominance + deviation + disagreement + mean, all patterns are fully composa
 \end{itemize}
 
 This approach avoids hand-coded categories, allowing dynamic pattern discovery as researchers explore the data. Scatter plots of $C_W$ vs. $C_A$ colored by $C_G$, or clustering by dominance/deviation profiles, reveal natural component groupings.
+\end{remark}
+
+\section{Nonlinear Diagnostics}
+\label{app:nonlinear}
+
+When the Linear Representation Score is low ($\text{LRS}^{(k)} < \tau_{\text{nonlinear}}$, default $\tau_{\text{nonlinear}} = 0.4$), the behavioral representation at component $k$ may be nonlinear---gated, distributed, or interaction-dependent. Rather than discarding the component, DCAF triggers a suite of nonlinear diagnostic methods to characterize the representation.
+
+\begin{definition}[Nonlinear Diagnostic Trigger]
+For component $k$, nonlinear diagnostics are triggered when:
+\begin{equation}
+\text{LRS}^{(k)} < \tau_{\text{nonlinear}}
+\end{equation}
+The diagnostics are purely informational---they characterize the nature of the nonlinearity without altering confidence scores or candidate status. A component with low LRS may still be high-confidence through weight and activation evidence.
+\end{definition}
+
+\begin{definition}[PaCMAP Embedding Diagnostics]
+\label{def:pacmap-diagnostics}
+Compute PaCMAP embeddings in two modes:
+\begin{enumerate}[nosep]
+\item \textbf{Raw activations:} Embed $A^{(k)} \in \mathbb{R}^{n \times d_k}$ into $\mathbb{R}^2$. Compute silhouette score $s_{\text{raw}}^{(k)}$ measuring how well behavioral classes ($T^+$ vs $T^-$ examples) cluster in the embedding.
+\item \textbf{Activation deltas:} Embed $\Delta A^{(k)} = A^{(k)}_{\text{peak}} - A^{(k)}_{\text{pre}}$ into $\mathbb{R}^2$. Compute silhouette score $s_{\Delta}^{(k)}$ measuring whether training-induced changes separate by behavioral class.
+\end{enumerate}
+High silhouette scores ($s > 0.5$) despite low LRS indicate that the behavioral representation exists but is nonlinear---the classes are separable in the full activation space but not along any single direction.
+\end{definition}
+
+\begin{definition}[Procrustes Alignment]
+\label{def:procrustes}
+The structural mirror score measures whether $T^+$ and $T^-$ activation patterns share the same geometric structure (reflected):
+\begin{equation}
+\text{SMS}^{(k)} = 1 - \frac{\text{disparity}(\hat{A}^+, \hat{A}^-)}{\text{disparity}_{\text{baseline}}}
+\end{equation}
+where $\hat{A}^+, \hat{A}^-$ are the PaCMAP embeddings of $T^+$ and $T^-$ activations respectively, $\text{disparity}(\cdot, \cdot)$ is the Procrustes disparity after optimal rotation, reflection, and scaling, and $\text{disparity}_{\text{baseline}}$ is the expected disparity between random point clouds. $\text{SMS} \approx 1$: target and opposite behaviors produce mirror-image activation patterns. $\text{SMS} \approx 0$: unrelated geometric structures.
+\end{definition}
+
+\begin{definition}[Polynomial Probing]
+\label{def:polynomial-probing}
+Train degree-2 polynomial probes and compare to linear probes:
+\begin{equation}
+\text{poly\_gap}^{(k)} = \text{acc}_{\text{poly2}}^{(k)} - \text{acc}_{\text{linear}}^{(k)}
+\end{equation}
+where $\text{acc}_{\text{poly2}}$ is the accuracy of a degree-2 polynomial probe (capturing pairwise feature interactions) and $\text{acc}_{\text{linear}}$ is the accuracy of a linear probe, both on held-out data. A large poly\_gap ($> 0.1$) indicates the behavior depends on feature interactions rather than individual feature values.
+
+From the trained degree-2 polynomial probe, extract the top interaction terms by coefficient magnitude. For each cross-term $x_i \cdot x_j$ in the polynomial feature expansion, the learned coefficient $w_{ij}$ indicates how strongly that dimension pair contributes to behavioral classification. Report as a ranked list of $(i, j, w_{ij})$ triples for the top-$n$ interactions (by $|w_{ij}|$). These identify which pairs of activation dimensions interact to encode the behavior, providing interpretable structure beyond the aggregate $\text{poly\_gap}$ metric.
+\end{definition}
+
+\begin{remark}[Interaction Term Concentration]
+When a small number of interaction terms dominate (e.g., top 2--3 terms account for $>$50\% of the poly\_gap improvement), the nonlinear encoding has localized structure amenable to further investigation. When many terms contribute roughly equally, the encoding is more distributed.
+\end{remark}
+
+\begin{definition}[Kernel LDA]
+Apply kernel LDA with an RBF kernel to the activation space at component $k$:
+\begin{equation}
+d^{(k)}_{\text{kernel}} = \text{KernelLDA}(A^+(k), A^-(k))
+\end{equation}
+This produces a nonlinear discriminant that may separate classes where linear LDA fails. Kernel LDA is diagnostic only: it identifies components where behavior is nonlinearly encoded but does not produce a steering vector (nonlinear directions cannot be directly injected). Components identified by kernel LDA but not linear LDA are flagged for further investigation.
+
+The kernel gap metric:
+\begin{equation}
+\text{kernel\_gap}^{(k)} = \text{acc}_{\text{kernel}}^{(k)} - \text{acc}_{\text{linear}}^{(k)}
+\end{equation}
+This is the kernel-space analog of $\text{poly\_gap}$. A large $\text{kernel\_gap}$ indicates nonlinear encoding that quadratic features alone may not capture (the RBF kernel has infinite effective feature expansion).
+\end{definition}
+
+\begin{remark}[Joint Interpretation of Polynomial and Kernel Gaps]
+The two gap metrics jointly characterize the nature of nonlinear encoding:
+\begin{itemize}[nosep]
+\item High poly\_gap, low kernel\_gap: behavior encoded through pairwise feature interactions---quadratic features suffice.
+\item Low poly\_gap, high kernel\_gap: behavior requires higher-order or non-polynomial nonlinearities.
+\item Both high: strong nonlinear encoding through multiple mechanisms.
+\item Both low: linear methods capture the representation (LRS should be high; if LRS is also low, the component may not encode the behavior at all).
+\end{itemize}
+\end{remark}
+
+\begin{remark}[Nonlinear Diagnostics Aggregation]
+The diagnostic methods are aggregated into a single structure for each triggered component:
+\begin{align}
+\text{NonlinearDiag}(k) = \bigl(&s_{\text{raw}}^{(k)},\; s_{\Delta}^{(k)},\; \text{SMS}^{(k)},\; \text{poly\_gap}^{(k)},\; \text{acc}_{\text{kernel}}^{(k)},\; \text{kernel\_gap}^{(k)}\bigr)
+\end{align}
+Common patterns:
+\begin{itemize}[nosep]
+\item \textbf{High silhouette, high poly\_gap:} Behavior encoded through feature interactions---look for gating mechanisms.
+\item \textbf{High SMS:} Target and opposite are geometric mirrors---the component implements a switchable circuit.
+\item \textbf{High kernel accuracy, low linear accuracy:} Strong nonlinear encoding---the behavior is ``hidden'' from linear methods but present.
+\item \textbf{All low:} Component may not encode the behavior at all; weight/activation evidence may be indirect.
+\end{itemize}
+\end{remark}
+
+\section{Parametric Embedding}
+\label{app:parametric}
+
+\begin{remark}[Optional Extension]
+Parametric embedding is computationally expensive. It is appropriate when deep visualization of activation geometry is required, and may be omitted without affecting confidence scores or candidate selection.
+\end{remark}
+
+\begin{definition}[Parametric Embedding]
+Train a parametric function $f_\theta: \mathbb{R}^{d_k} \to \mathbb{R}^2$ to minimize PaCMAP loss on the training activations:
+\begin{equation}
+\theta^* = \arg\min_\theta \;\mathcal{L}_{\text{PaCMAP}}\bigl(\{f_\theta(a_j)\}_{j=1}^n,\; \{a_j\}_{j=1}^n\bigr)
+\end{equation}
+Unlike standard PaCMAP (which produces fixed coordinates for a fixed set of points), the parametric version learns a mapping function that generalizes to unseen activations. This enables:
+\begin{enumerate}[nosep]
+\item \textbf{Embedding new points:} Compute $f_{\theta^*}(a_{\text{new}})$ for any new activation without re-running the full embedding.
+\item \textbf{Consistent coordinates:} Pre- and peak-checkpoint activations are embedded in the same coordinate system, enabling direct visual comparison of how training moved representations.
+\item \textbf{Generalization testing:} Embed held-out activations and measure whether behavioral class separation transfers, providing an independent generalization signal.
+\end{enumerate}
+\end{definition}
+
+\begin{remark}[Generalization Evaluation]
+Split activations into train and held-out sets. Train $f_\theta$ on the training split. Compute silhouette scores on both:
+\begin{equation}
+\text{gen}_{\text{embed}}^{(k)} = \frac{s_{\text{held-out}}^{(k)}}{s_{\text{train}}^{(k)}}
+\end{equation}
+$\text{gen}_{\text{embed}} \approx 1$: embedding captures a generalizable structure. $\text{gen}_{\text{embed}} \ll 1$: embedding overfits to training activations.
 \end{remark}
 
 \section{Implementation Considerations}
