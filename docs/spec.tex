@@ -487,6 +487,7 @@ DCAF uses percentile-based significance predicates to determine whether a projec
 DCAF employs three complementary discovery paths. Each path identifies candidate projections using different evidence, which are then mapped to components via $\mu_{\text{proj}}$. This section provides the discovery formulas with brief explanations; full methodology details are in the domain analysis sections (\S\ref{sec:weight-analysis}--\S\ref{sec:geometry-analysis}). All discovered components then receive confidence scores from all three measurement domains.
 
 \subsection{Path 1: Weight-Based Discovery ($\mathcal{H}_W$)}
+\label{sec:weight-discovery}
 
 Weight-based discovery identifies projections that changed substantially during behavioral training---the most direct evidence of optimization pressure. Full methodology for computing these terms is in \S\ref{sec:weight-analysis}.
 
@@ -552,6 +553,7 @@ where $\tau_{\text{opp}} = 0.3$ (default). A component is bidirectional if any o
 \end{definition}
 
 \subsection{Path 2: Activation-Based Discovery ($\mathcal{H}_A$)}
+\label{sec:activation-discovery}
 
 Activation-based discovery identifies \textbf{leverage points}: projections where small weight changes produce large representational effects. These are missed by weight-based discovery but may be critical for behavioral control. This path uses activation methodology from \S\ref{sec:activation-analysis}.
 
@@ -684,7 +686,7 @@ A component discovered via Path 2 (activation) still receives confidence contrib
 \label{sec:weight-analysis}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-This section provides full methodology for weight-based analysis. Discovery formulas appear in \S3.1; this section covers implementation details, edge cases, and design rationale. All discovered components ($\mathcal{H}_{\text{disc}}$) receive weight confidence scores $C_W$, regardless of which path discovered them. Weight analysis operates at \textbf{projection level}: each projection matrix is analyzed individually, then results are aggregated to component level for integration with the other domains.
+This section provides full methodology for weight-based analysis. Discovery formulas appear in \S\ref{sec:weight-discovery}; this section covers implementation details, edge cases, and design rationale. All discovered components ($\mathcal{H}_{\text{disc}}$) receive weight confidence scores $C_W$, regardless of which path discovered them. Weight analysis operates at \textbf{projection level}: each projection matrix is analyzed individually, then results are aggregated to component level for integration with the other domains.
 
 \subsection{Signal Effectiveness}
 
@@ -862,7 +864,7 @@ A component discovered via Path 2 (activation) with low $C_W$ indicates a levera
 \label{sec:activation-analysis}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-This section provides full methodology for activation-based analysis. Discovery formulas appear in \S3.2; this section covers probe types, activation capture, and confidence computation.
+This section provides full methodology for activation-based analysis. Discovery formulas appear in \S\ref{sec:activation-discovery}; this section covers probe types, activation capture, and confidence computation.
 
 \subsection{Probe Types}
 
@@ -1823,7 +1825,7 @@ Partition $\mathcal{H}_{\text{cand}}$ into:
 Each strategy independently identifies pairs or groups likely to interact. Results are pooled. The total number of pairs tested is capped at $B_{\text{pair}}$ (default: 300); when the union of candidate pairs from Strategies A--G exceeds this budget, pairs found by multiple strategies are prioritized, then by unified confidence of constituent components.
 
 \begin{definition}[Strategy A: Graph-Adjacent Pairs]
-Components connected by preliminary circuit edges (from activation flow or gradient correlation in \S8) with edge weight $> \tau_E$ are paired. Tests connected circuit segments.
+Components connected by preliminary circuit edges (from activation flow or gradient correlation in \S\ref{sec:circuit-graph}) with edge weight $> \tau_E$ are paired. Tests connected circuit segments.
 \end{definition}
 
 \begin{definition}[Strategy B: Gradient-Based Interaction Screening]
