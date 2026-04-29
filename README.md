@@ -6,7 +6,7 @@
 
 **Identify which neural network components implement a specific behavior, map their causal connections, and classify their functional roles.**
 
-Current circuit discovery methods produce inconsistent results — different techniques with different hyperparameters yield different circuits ([Zhang & Nanda, ICLR 2024](https://arxiv.org/abs/2310.15154)). DCAF addresses this by treating each training signal as a controlled perturbation experiment and requiring **convergent evidence** across weight deltas, activation patterns, and latent geometry. If 10 independent training signals agree on a circuit, it's robust to methodology choice. Backed by a [62-page formal specification](docs/spec.pdf) with 200+ definitions.
+Current circuit discovery methods produce inconsistent results — different techniques with different hyperparameters yield different circuits ([Zhang & Nanda, ICLR 2024](https://arxiv.org/abs/2310.15154)). DCAF addresses this by treating each training signal as a controlled perturbation experiment and requiring **convergent evidence** across weight deltas, activation patterns, and latent geometry. If 10 independent training signals agree on a circuit, it's robust to methodology choice. Backed by a [formal specification and arXiv preprint](docs/spec.pdf) with 138 definitions and 58 verified citations.
 
 *This project began as my first exploration of machine learning and mechanistic interpretability. I wanted to learn how models actually work, and the most engaging way I found was to dive directly into one of the field's most pressing open problems: reliably identifying the circuits that implement specific behaviors. I dove deep into the literature, synthesized ideas from across circuit discovery, representation engineering, sparse autoencoders, and causal abstraction, and built a complete formal framework from what I learned. The end goal is identifying safety-relevant circuits for targeted intervention. It reflects both a working research tool and the process of understanding a field from first principles by building, not just reading.*
 
@@ -323,7 +323,7 @@ pip install -e ".[dev]"
 
 ## Project Structure
 
-Every module maps to a section of the [formal specification](docs/spec.pdf):
+Every module maps to a section of the [paper](docs/spec.pdf):
 
 ```
 dcaf/
@@ -348,17 +348,13 @@ dcaf/
   cli/                      Train, discover, analyze commands with runners
 ```
 
-## Formal Specification
+## Paper
 
-The complete mathematical specification is available as:
-- **[PDF](docs/spec.pdf)** — 62 pages, 200+ numbered definitions, complete notation reference
-- **[LaTeX source](docs/spec.tex)** — for verification and extension
+The complete formal specification is written as an arXiv preprint:
+- **[PDF](docs/spec.pdf)** — 76 pages, 138 definitions, 58 verified citations
+- **[LaTeX source](docs/spec.tex)** + **[Bibliography](docs/dcaf.bib)**
 
-The spec covers the universal framework (Part I), architecture-specific implementations for transformers (Part II), and a complete notation reference (Part III).
-
-## Related Work
-
-See [docs/related_work.md](docs/related_work.md) for comprehensive positioning against 30+ papers across circuit discovery, representation engineering, sparse autoencoders, safety circuit protection, and methodological foundations.
+Includes: Introduction with 5 contributions, Related Work covering 7 areas of the 2020--2026 mech-interp literature, the full mathematical framework, architecture-specific implementations (Appendix A), complete notation reference (Appendix B), and a discussion of limitations.
 
 ## Testing
 
@@ -388,9 +384,9 @@ See [docs/roadmap.md](docs/roadmap.md) for implemented vs. planned features. Key
 ## Citation
 
 ```bibtex
-@software{kogan2026dcaf,
+@article{kogan2026dcaf,
   author = {Kogan, David},
-  title = {{DCAF}: Differential Circuit Analysis Framework},
+  title = {{DCAF}: A Comprehensive Architecture-Agnostic Methodology for Behavior-Specific Circuit Isolation},
   year = {2026},
   url = {https://github.com/davidkny22/dcaf-public}
 }
