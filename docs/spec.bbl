@@ -1,0 +1,504 @@
+\begin{thebibliography}{58}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Ameisen et~al.(2025)Ameisen, Lindsey, Pearce, Gurnee, Turner, Chen,
+  Citro, et~al.]{ameisen2025tracing}
+Emmanuel Ameisen, Jack Lindsey, Adam Pearce, Wes Gurnee, Aidan Turner, Shan
+  Chen, Craig Citro, et~al.
+\newblock Circuit tracing: Revealing computational graphs in language models.
+\newblock \emph{Transformer Circuits Thread}, 2025.
+\newblock URL
+  \url{https://transformer-circuits.pub/2025/attribution-graphs/methods.html}.
+
+\bibitem[Arditi et~al.(2024)Arditi, Obeso, Syed, Paleka, Panickssery, Gurnee,
+  and Nanda]{arditi2024refusal}
+Andy Arditi, Oscar Obeso, Aaquib Syed, Daniel Paleka, Nina Panickssery, Wes
+  Gurnee, and Neel Nanda.
+\newblock Refusal in language models is mediated by a single direction.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2406.11717}.
+
+\bibitem[Belinkov(2022)]{belinkov2022probing}
+Yonatan Belinkov.
+\newblock Probing classifiers: Promises, shortcomings, and advances.
+\newblock \emph{Computational Linguistics}, 48\penalty0 (1):\penalty0 207--219,
+  2022.
+\newblock \doi{10.1162/coli_a_00422}.
+
+\bibitem[Braun et~al.(2025)Braun, Bushnaq, Heimersheim, Mendel, and
+  Sharkey]{braun2025apd}
+Dan Braun, Lucius Bushnaq, Stefan Heimersheim, Jake Mendel, and Lee Sharkey.
+\newblock Interpretability in parameter space: Minimizing mechanistic
+  description length with attribution-based parameter decomposition.
+\newblock \emph{arXiv preprint arXiv:2501.14926}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2501.14926}.
+
+\bibitem[Bricken et~al.(2023)Bricken, Templeton, Batson, Chen, Jermyn, Conerly,
+  Turner, Anil, Denison, Askell, Lasenby, Wu, Kravec, Schiefer, Maxwell,
+  Joseph, Hatfield-Dodds, Tamber, Nguyen, McLean, Burke, Hume, Carter,
+  Henighan, and Olah]{bricken2023monosemanticity}
+Trenton Bricken, Adly Templeton, Joshua Batson, Brian Chen, Adam Jermyn, Tom
+  Conerly, Nick Turner, Cem Anil, Carson Denison, Amanda Askell, Robert
+  Lasenby, Yifan Wu, Shauna Kravec, Nicholas Schiefer, Tim Maxwell, Nicholas
+  Joseph, Zac Hatfield-Dodds, Alex Tamber, Karina Nguyen, Brayden McLean,
+  Josiah~E Burke, Tristan Hume, Shan Carter, Tom Henighan, and Christopher
+  Olah.
+\newblock Towards monosemanticity: Decomposing language models with dictionary
+  learning.
+\newblock \emph{Transformer Circuits Thread}, 2023.
+\newblock URL
+  \url{https://transformer-circuits.pub/2023/monosemantic-features/index.html}.
+
+\bibitem[Conmy et~al.(2023)Conmy, Mavor-Parker, Lynch, Heimersheim, and
+  Garriga-Alonso]{conmy2023acdc}
+Arthur Conmy, Augustine~N Mavor-Parker, Aidan Lynch, Stefan Heimersheim, and
+  Adri\`{a} Garriga-Alonso.
+\newblock Towards automated circuit discovery for mechanistic interpretability.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2304.14997}.
+\newblock Spotlight.
+
+\bibitem[Cunningham et~al.(2024)Cunningham, Ewart, Riggs, Huben, and
+  Sharkey]{cunningham2024sae}
+Hoagy Cunningham, Aidan Ewart, Logan Riggs, Robert Huben, and Lee Sharkey.
+\newblock Sparse autoencoders find highly interpretable features in language
+  models.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2309.08600}.
+
+\bibitem[Dooms et~al.(2024)]{dooms2024bilinear}
+Max Dooms et~al.
+\newblock Bilinear {MLPs} enable weight-based mechanistic interpretability.
+\newblock \emph{arXiv preprint arXiv:2410.08417}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2410.08417}.
+
+\bibitem[Edin et~al.(2025)Edin, Csord\'{a}s, Ruotsalo, Wu, Maistro,
+  Christensen, Huang, and Maal{\o}e]{edin2025gim}
+Joakim Edin, R\'{o}bert Csord\'{a}s, Tuukka Ruotsalo, Zhirong Wu, Maria
+  Maistro, Laust~Brock Christensen, Yuhuang Huang, and Lars Maal{\o}e.
+\newblock {GIM}: Improved interpretability for large language models.
+\newblock \emph{arXiv preprint arXiv:2505.17630}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2505.17630}.
+
+\bibitem[Elhage et~al.(2021)Elhage, Nanda, Olsson, Henighan, Joseph, Mann,
+  Askell, Bai, Chen, Conerly, DasSarma, Drain, Ganguli, Hatfield-Dodds,
+  Hernandez, Jones, Kernion, Lovitt, Ndousse, Amodei, Brown, Clark, Kaplan,
+  McCandlish, and Olah]{elhage2021mathematical}
+Nelson Elhage, Neel Nanda, Catherine Olsson, Tom Henighan, Nicholas Joseph, Ben
+  Mann, Amanda Askell, Yuntao Bai, Anna Chen, Tom Conerly, Nova DasSarma, Dawn
+  Drain, Deep Ganguli, Zac Hatfield-Dodds, Danny Hernandez, Andy Jones, Jackson
+  Kernion, Liane Lovitt, Kamal Ndousse, Dario Amodei, Tom Brown, Jack Clark,
+  Jared Kaplan, Sam McCandlish, and Chris Olah.
+\newblock A mathematical framework for transformer circuits.
+\newblock \emph{Transformer Circuits Thread}, 2021.
+\newblock URL \url{https://transformer-circuits.pub/2021/framework/index.html}.
+
+\bibitem[Gao et~al.(2024)Gao, Dupr\'{e}~la Tour, Tillman, Goh, Troll, Radford,
+  Sutskever, Leike, and Wu]{gao2024scaling}
+Leo Gao, Tom Dupr\'{e}~la Tour, Henk Tillman, Gabriel Goh, Rajan Troll, Alec
+  Radford, Ilya Sutskever, Jan Leike, and Jeffrey Wu.
+\newblock Scaling and evaluating sparse autoencoders.
+\newblock \emph{arXiv preprint arXiv:2406.04093}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2406.04093}.
+
+\bibitem[Gao et~al.(2025)]{gao2025weightsparse}
+Leo Gao et~al.
+\newblock Weight-sparse transformers have interpretable circuits.
+\newblock \emph{arXiv preprint arXiv:2511.13653}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2511.13653}.
+
+\bibitem[Geiger et~al.(2021)Geiger, Lu, Icard, and Potts]{geiger2021causal}
+Atticus Geiger, Hanson Lu, Thomas Icard, and Christopher Potts.
+\newblock Causal abstractions of neural networks.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2021.
+\newblock URL \url{https://arxiv.org/abs/2106.02997}.
+
+\bibitem[Geiger et~al.(2025)Geiger, Potts, and Icard]{geiger2025causal}
+Atticus Geiger, Christopher Potts, and Thomas Icard.
+\newblock Causal abstraction: A theoretical foundation for mechanistic
+  interpretability.
+\newblock \emph{Journal of Machine Learning Research}, 26\penalty0 (83), 2025.
+\newblock URL \url{https://arxiv.org/abs/2301.04709}.
+
+\bibitem[Goldowsky-Dill et~al.(2023)Goldowsky-Dill, MacLeod, Sato, and
+  Arora]{goldowsky2023path}
+Nicholas Goldowsky-Dill, Chris MacLeod, Lucas Sato, and Aryaman Arora.
+\newblock Localizing model behavior with path patching.
+\newblock \emph{arXiv preprint arXiv:2304.05969}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2304.05969}.
+
+\bibitem[Golimblevskaia et~al.(2025)]{golimblevskaia2025circuitinsights}
+Elizaveta Golimblevskaia et~al.
+\newblock Circuit insights: Towards interpretability beyond activations.
+\newblock \emph{arXiv preprint arXiv:2510.14936}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2510.14936}.
+
+\bibitem[Hadad et~al.(2026)Hadad, Katz, and Bassan]{hadad2026formal}
+Amir Hadad, Guy Katz, and Shay Bassan.
+\newblock Formal mechanistic interpretability: Automated circuit discovery with
+  provable guarantees.
+\newblock \emph{arXiv preprint arXiv:2602.16823}, 2026.
+\newblock URL \url{https://arxiv.org/abs/2602.16823}.
+
+\bibitem[Han et~al.(2025)Han, Zhao, Zhao, Shen, Wu, Shi, and Zeng]{han2025fgsn}
+Songchen Han, Yifan Zhao, Xin Zhao, Shimin Shen, Zhijiang Wu, Haibo Shi, and
+  Zhiyuan Zeng.
+\newblock Multi-level safety continual projection for fine-tuned large language
+  models without retraining.
+\newblock \emph{arXiv preprint arXiv:2508.09190}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2508.09190}.
+\newblock Originally titled ``Fine-Grained Safety Neurons''.
+
+\bibitem[Hanna et~al.(2023)Hanna, Liu, and Variengien]{hanna2023greaterthan}
+Michael Hanna, Ollie Liu, and Alexandre Variengien.
+\newblock How does {GPT}-2 compute greater-than over the integers?
+  {I}nterpreting mathematical abilities in a pre-trained language model.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2305.00586}.
+
+\bibitem[He et~al.(2024)He, Ge, Tang, Sun, Cheng, and Qiu]{he2024dictionary}
+Zhengfu He, Xuyang Ge, Qiong Tang, Tianxiang Sun, Qinyuan Cheng, and Xipeng
+  Qiu.
+\newblock Dictionary learning improves patch-free circuit discovery in
+  mechanistic interpretability: {A} case study on {Othello}-{GPT}.
+\newblock \emph{arXiv preprint arXiv:2402.12201}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2402.12201}.
+
+\bibitem[Heimersheim and Janiak(2023)]{heimersheim2023docstring}
+Stefan Heimersheim and Jett Janiak.
+\newblock A circuit for {Python} docstrings in a 4-layer attention-only
+  transformer.
+\newblock \emph{Alignment Forum}, 2023.
+
+\bibitem[Hewitt and Manning(2019)]{hewitt2019structural}
+John Hewitt and Christopher~D Manning.
+\newblock A structural probe for finding syntax in word representations.
+\newblock In \emph{North American Chapter of the Association for Computational
+  Linguistics (NAACL)}, pages 4129--4138, 2019.
+
+\bibitem[Hsu et~al.(2025)Hsu, Zhou, Cherapanamjeri, Huang, Odisho, Carroll, and
+  Yu]{hsu2025cdt}
+Alina Hsu, Jiarui Zhou, Yeshwanth Cherapanamjeri, Yanping Huang, Anobel Odisho,
+  Peter~R Carroll, and Bin Yu.
+\newblock Efficient automated circuit discovery in transformers using
+  contextual decomposition.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2407.00886}.
+
+\bibitem[Huang et~al.(2025)Huang, Hu, Ilhan, Tekin, and Liu]{huang2025booster}
+Tiansheng Huang, Sihao Hu, Fatih Ilhan, Selim Tekin, and Ling Liu.
+\newblock {BOOSTER}: Tackling harmful fine-tuning for large language models via
+  attenuating harmful perturbation.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2409.01586}.
+\newblock Oral.
+
+\bibitem[Lermen et~al.(2023)Lermen, Rogers-Smith, and Ladish]{lermen2023lora}
+Simon Lermen, Charlie Rogers-Smith, and Jeffrey Ladish.
+\newblock {LoRA} fine-tuning efficiently undoes safety training in {Llama}
+  2-chat 70b.
+\newblock \emph{arXiv preprint arXiv:2310.20624}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2310.20624}.
+
+\bibitem[Li et~al.(2023)Li, Patel, Vi\'{e}gas, Pfister, and
+  Wattenberg]{li2023iti}
+Kenneth Li, Oam Patel, Fernanda Vi\'{e}gas, Hanspeter Pfister, and Martin
+  Wattenberg.
+\newblock Inference-time intervention: Eliciting truthful answers from a
+  language model.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2306.03341}.
+\newblock Spotlight.
+
+\bibitem[Li and Janson(2024)]{li2024optimal}
+Maximilian Li and Lucas Janson.
+\newblock Optimal ablation for interpretability.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2409.09951}.
+\newblock Spotlight.
+
+\bibitem[Lieberum et~al.(2023)Lieberum, Rahtz, Kram\'{a}r, Irving, Shah, and
+  Mikulik]{lieberum2023chinchilla}
+Tom Lieberum, Matthew Rahtz, J\'{a}nos Kram\'{a}r, Geoffrey Irving, Rohin Shah,
+  and Vladimir Mikulik.
+\newblock Does circuit analysis interpretability scale? {E}vidence from
+  multiple choice capabilities in {Chinchilla}.
+\newblock \emph{arXiv preprint arXiv:2307.09458}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2307.09458}.
+
+\bibitem[Lieberum et~al.(2024)Lieberum, Rajamanoharan, Conmy, Smith, Sonnerat,
+  Varma, Kram\'{a}r, Dragan, Shah, and Nanda]{lieberum2024gemma}
+Tom Lieberum, Senthooran Rajamanoharan, Arthur Conmy, Lewis Smith, Nicolas
+  Sonnerat, Vikrant Varma, J\'{a}nos Kram\'{a}r, Anca Dragan, Rohin Shah, and
+  Neel Nanda.
+\newblock Gemma scope: Open sparse autoencoders everywhere all at once on
+  {Gemma} 2.
+\newblock In \emph{BlackboxNLP Workshop at EMNLP}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2408.05147}.
+
+\bibitem[Lindsey et~al.(2025)Lindsey, Gurnee, Ameisen, Chen, Pearce, Turner,
+  et~al.]{lindsey2025biology}
+Jack Lindsey, Wes Gurnee, Emmanuel Ameisen, Shan Chen, Adam Pearce, Aidan
+  Turner, et~al.
+\newblock On the biology of a large language model.
+\newblock \emph{Transformer Circuits Thread}, 2025.
+\newblock URL
+  \url{https://transformer-circuits.pub/2025/attribution-graphs/biology.html}.
+
+\bibitem[Long(2025)]{long2025triangulation}
+Jiahai Long.
+\newblock Triangulation as an acceptance rule for multilingual mechanistic
+  interpretability.
+\newblock \emph{arXiv preprint arXiv:2512.24842}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2512.24842}.
+
+\bibitem[Marks and Tegmark(2024)]{marks2024geometry}
+Samuel Marks and Max Tegmark.
+\newblock The geometry of truth: Emergent linear structure in large language
+  model representations of true/false datasets.
+\newblock In \emph{Conference on Language Modeling (COLM)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2310.06824}.
+
+\bibitem[Marks et~al.(2025)Marks, Rager, Michaud, Belinkov, Bau, and
+  Mueller]{marks2025sparse}
+Samuel Marks, Can Rager, Eric~J Michaud, Yonatan Belinkov, David Bau, and Aaron
+  Mueller.
+\newblock Sparse feature circuits: Discovering and editing interpretable causal
+  graphs in language models.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2403.19647}.
+
+\bibitem[M\'{e}loux et~al.(2025)]{meloux2025variance}
+Th\'{e}o M\'{e}loux et~al.
+\newblock Mechanistic interpretability as statistical estimation: A variance
+  analysis.
+\newblock \emph{arXiv preprint arXiv:2510.00845}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2510.00845}.
+
+\bibitem[Meng et~al.(2022)Meng, Bau, Andonian, and Belinkov]{meng2022rome}
+Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov.
+\newblock Locating and editing factual associations in {GPT}.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2022.
+\newblock URL \url{https://arxiv.org/abs/2202.05262}.
+
+\bibitem[Mondorf et~al.(2025)]{mondorf2025ensemble}
+Philipp Mondorf et~al.
+\newblock Exploring ensemble strategies for circuit localization.
+\newblock In \emph{BlackboxNLP Workshop}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2510.06811}.
+
+\bibitem[Mueller et~al.(2025)Mueller, Geiger, Wiegreffe, Arad, Arcuschin,
+  Belfki, Chan, Fiotto-Kaufman, Haklay, Hanna, Huang, Gupta, Nikankin, Orgad,
+  Prakash, Reusch, Sankaranarayanan, Shao, Stolfo, Tutek, Zur, Bau, and
+  Belinkov]{mueller2025mib}
+Aaron Mueller, Atticus Geiger, Sarah Wiegreffe, Omer Arad, Alejandro Arcuschin,
+  Adam Belfki, Lawrence Chan, Jaden Fiotto-Kaufman, Mor Haklay, Michael Hanna,
+  Yaniv Huang, Aryaman Gupta, Yaniv Nikankin, Hadas Orgad, Nikhil Prakash,
+  Katherine Reusch, Abhinav Sankaranarayanan, Yun Shao, Alessandro Stolfo,
+  Martin Tutek, Amir Zur, David Bau, and Yonatan Belinkov.
+\newblock {MIB}: A mechanistic interpretability benchmark.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2504.13151}.
+
+\bibitem[Nanda et~al.(2023)Nanda, Chan, Lieberum, Smith, and
+  Steinhardt]{nanda2023grokking}
+Neel Nanda, Lawrence Chan, Tom Lieberum, Jess Smith, and Jacob Steinhardt.
+\newblock Progress measures for grokking via mechanistic interpretability.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2301.05217}.
+
+\bibitem[Olah et~al.(2020)Olah, Cammarata, Schubert, Goh, Petrov, and
+  Carter]{olah2020zoom}
+Chris Olah, Nick Cammarata, Ludwig Schubert, Gabriel Goh, Michael Petrov, and
+  Shan Carter.
+\newblock Zoom in: An introduction to circuits.
+\newblock \emph{Distill}, 2020.
+\newblock \doi{10.23915/distill.00024.001}.
+\newblock URL \url{https://distill.pub/2020/circuits/zoom-in/}.
+
+\bibitem[Panickssery et~al.(2024)Panickssery, Gabrieli, Schulz, Tong, Hubinger,
+  and Turner]{panickssery2024caa}
+Nina Panickssery, Nick Gabrieli, Julian Schulz, Meg Tong, Evan Hubinger, and
+  Alexander~Matt Turner.
+\newblock Steering {Llama} 2 via contrastive activation addition.
+\newblock In \emph{Annual Meeting of the Association for Computational
+  Linguistics (ACL)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2312.06681}.
+
+\bibitem[Park et~al.(2024)Park, Choe, and Veitch]{park2024linear}
+Kiho Park, Yo~Joong Choe, and Victor Veitch.
+\newblock The linear representation hypothesis and the geometry of large
+  language models.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2311.03658}.
+
+\bibitem[Prakash et~al.(2024)Prakash, Shaham, Haklay, Belinkov, and
+  Bau]{prakash2024finetuning}
+Nikhil Prakash, Tamar~Rott Shaham, Tal Haklay, Yonatan Belinkov, and David Bau.
+\newblock Fine-tuning enhances existing mechanisms: A case study on entity
+  tracking.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2402.14811}.
+
+\bibitem[Qi et~al.(2024)Qi, Zeng, Xie, Chen, Jia, Mittal, and
+  Henderson]{qi2024finetuning}
+Xiangyu Qi, Yi~Zeng, Tinghao Xie, Pin-Yu Chen, Ruoxi Jia, Prateek Mittal, and
+  Peter Henderson.
+\newblock Fine-tuning aligned language models compromises safety, even when
+  users do not intend to.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2310.03693}.
+
+\bibitem[Rafailov et~al.(2023)Rafailov, Sharma, Mitchell, Ermon, Manning, and
+  Finn]{rafailov2023dpo}
+Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher~D
+  Manning, and Chelsea Finn.
+\newblock Direct preference optimization: Your language model is secretly a
+  reward model.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2305.18290}.
+\newblock Outstanding Paper Award.
+
+\bibitem[Sharkey et~al.(2025)Sharkey, Chughtai, Batson, Lindsey, Wu, Bushnaq,
+  Goldowsky-Dill, Heimersheim, et~al.]{sharkey2025openproblems}
+Lee Sharkey, Bilal Chughtai, Joshua Batson, Jack Lindsey, Jeff Wu, Lucius
+  Bushnaq, Nicholas Goldowsky-Dill, Stefan Heimersheim, et~al.
+\newblock Open problems in mechanistic interpretability.
+\newblock \emph{Transactions on Machine Learning Research (TMLR)}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2501.16496}.
+
+\bibitem[Singh et~al.(2024)Singh, Moskovitz, Hill, Kumaran, and
+  Saxe]{singh2024induction}
+Aaditya~K Singh, Ted Moskovitz, Felix Hill, Dharshan Kumaran, and Andrew~M
+  Saxe.
+\newblock What needs to go right for an induction head? {A} mechanistic study
+  of in-context learning circuits and their formation.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2404.07129}.
+
+\bibitem[Syed et~al.(2024)Syed, Rager, and Conmy]{syed2024attribution}
+Aaquib Syed, Can Rager, and Arthur Conmy.
+\newblock Attribution patching outperforms automated circuit discovery.
+\newblock In \emph{BlackboxNLP Workshop at EMNLP}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2310.10348}.
+
+\bibitem[Templeton et~al.(2024)Templeton, Conerly, Marcus, Lindsey, Bricken,
+  Chen, Pearce, Citro, Ameisen, Jones, Cunningham, Turner, McDougall,
+  MacDiarmid, Freeman, Sumers, Rees, Batson, Jermyn, Carter, Olah, and
+  Henighan]{templeton2024scaling}
+Adly Templeton, Tom Conerly, Jonathan Marcus, Jack Lindsey, Trenton Bricken,
+  Brian Chen, Adam Pearce, Craig Citro, Emmanuel Ameisen, Andy Jones, Hoagy
+  Cunningham, Nicholas~L Turner, Callum McDougall, Monte MacDiarmid, C~Daniel
+  Freeman, Theodore~R Sumers, Edward Rees, Joshua Batson, Adam Jermyn, Shan
+  Carter, Chris Olah, and Tom Henighan.
+\newblock Scaling monosemanticity: Extracting interpretable features from
+  {Claude} 3 {Sonnet}.
+\newblock \emph{Transformer Circuits Thread}, 2024.
+\newblock URL
+  \url{https://transformer-circuits.pub/2024/scaling-monosemanticity/}.
+
+\bibitem[Tigges et~al.(2023)Tigges, Hollinsworth, Geiger, and
+  Nanda]{tigges2023sentiment}
+Curt Tigges, Oskar~J Hollinsworth, Atticus Geiger, and Neel Nanda.
+\newblock Linear representations of sentiment in large language models.
+\newblock \emph{arXiv preprint arXiv:2310.15154}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2310.15154}.
+
+\bibitem[Tigges et~al.(2024)Tigges, Hanna, Yu, and
+  Biderman]{tigges2024consistent}
+Curt Tigges, Michael Hanna, Qinan Yu, and Stella Biderman.
+\newblock {LLM} circuit analyses are consistent across training and scale.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2407.10827}.
+
+\bibitem[Turner et~al.(2023)Turner, Thiergart, Leech, Udell, Mini, and
+  MacDiarmid]{turner2023actadd}
+Alexander~Matt Turner, Lisa Thiergart, Gavin Leech, David Udell, Juan~J Mini,
+  and Monte MacDiarmid.
+\newblock Steering language models with activation engineering.
+\newblock \emph{arXiv preprint arXiv:2308.10248}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2308.10248}.
+
+\bibitem[Wang et~al.(2023)Wang, Variengien, Conmy, Shlegeris, and
+  Steinhardt]{wang2023ioi}
+Kevin Wang, Alexandre Variengien, Arthur Conmy, Buck Shlegeris, and Jacob
+  Steinhardt.
+\newblock Interpretability in the wild: a circuit for indirect object
+  identification in {GPT}-2 small.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2211.00593}.
+
+\bibitem[Wang et~al.(2025)]{wang2025finetuning}
+Yige Wang et~al.
+\newblock Towards understanding fine-tuning mechanisms of {LLMs} via circuit
+  analysis.
+\newblock \emph{arXiv preprint arXiv:2502.11812}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2502.11812}.
+
+\bibitem[Wei et~al.(2024)Wei, Huang, Huang, Xie, Qi, Xia, Mittal, Wang, and
+  Henderson]{wei2024brittleness}
+Boyi Wei, Kaixuan Huang, Yangsibo Huang, Tinghao Xie, Xiangyu Qi, Mengzhou Xia,
+  Prateek Mittal, Mengdi Wang, and Peter Henderson.
+\newblock Assessing the brittleness of safety alignment via pruning and
+  low-rank modifications.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2402.05162}.
+
+\bibitem[Zhang and Nanda(2024)]{zhang2024bestpractices}
+Fred Zhang and Neel Nanda.
+\newblock Towards best practices of activation patching in language models:
+  Metrics and methods.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2309.16042}.
+
+\bibitem[Zhu et~al.(2025)Zhu, Yang, Wei, Zhang, and Zhang]{zhu2025safetylock}
+Minjun Zhu, Linyi Yang, Yifan Wei, Ningyu Zhang, and Yue Zhang.
+\newblock Locking down the finetuned {LLMs} safety.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2410.10343}.
+
+\bibitem[Zou et~al.(2023)Zou, Phan, Chen, Campbell, Guo, Ren, Pan, Yin,
+  Mazeika, Dombrowski, Goel, Li, Byun, Wang, Mallen, Basart, Koyejo, Song,
+  Fredrikson, Kolter, and Hendrycks]{zou2023repe}
+Andy Zou, Long Phan, Sarah Chen, James Campbell, Phillip Guo, Richard Ren,
+  Alexander Pan, Xuwang Yin, Mantas Mazeika, Ann-Kathrin Dombrowski, Shashwat
+  Goel, Nathaniel Li, Michael~J Byun, Zifan Wang, Alex Mallen, Steven Basart,
+  Sanmi Koyejo, Dawn Song, Matt Fredrikson, J~Zico Kolter, and Dan Hendrycks.
+\newblock Representation engineering: A top-down approach to {AI} transparency.
+\newblock \emph{arXiv preprint arXiv:2310.01405}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2310.01405}.
+
+\bibitem[Zou et~al.(2024)Zou, Phan, Wang, Duenas, Lin, Andriushchenko, Wang,
+  Kolter, Fredrikson, and Hendrycks]{zou2024circuitbreakers}
+Andy Zou, Long Phan, Justin Wang, Derek Duenas, Maxwell Lin, Maksym
+  Andriushchenko, Zifan Wang, J~Zico Kolter, Matt Fredrikson, and Dan
+  Hendrycks.
+\newblock Improving alignment and robustness with circuit breakers.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2406.04313}.
+
+\end{thebibliography}

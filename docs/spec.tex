@@ -1,5 +1,5 @@
 \documentclass[11pt]{article}
-\usepackage[top=0.75in, bottom=1in, left=1in, right=1in]{geometry}
+\usepackage[top=1in, bottom=1in, left=1in, right=1in]{geometry}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{booktabs}
 \usepackage{enumitem}
@@ -12,29 +12,22 @@
 \usepackage{pdflscape}
 \usepackage{pdfpages}
 \usepackage{needspace}
+\usepackage{natbib}
 
 % Colors for the mega formula
 \definecolor{dcafblue}{RGB}{30,144,255}
 \definecolor{dcafpurple}{RGB}{138,43,226}
 \definecolor{dcaforange}{RGB}{255,140,0}
 
-% First page footer only
-\fancypagestyle{firstpage}{
-  \fancyhf{}
-  \fancyfoot[C]{\footnotesize\textcolor{gray}{© 2026 David Kogan. \textit{Confidential Disclosure.} This document is provided in confidence for evaluation purposes only and may not be used, disclosed, or commercialized without permission. \textit{Patent Pending.}}}
-  \renewcommand{\headrulewidth}{0pt}
-  \renewcommand{\footrulewidth}{0pt}
-}
-
 % PDF metadata
 \hypersetup{
-    pdftitle={Differential Circuit Analysis Framework (DCAF) - Complete Master Specification},
+    pdftitle={DCAF: A Comprehensive Architecture-Agnostic Methodology for Behavior-Specific Circuit Isolation},
     pdfauthor={David Kogan},
     pdfsubject={Mechanistic Interpretability, AI Safety, Neural Circuit Analysis},
     pdfkeywords={DCAF, mechanistic interpretability, neural circuits, AI safety, behavioral analysis},
     colorlinks=true,
     linkcolor=black,
-    citecolor=black,
+    citecolor=blue,
     urlcolor=blue
 }
 
@@ -47,29 +40,110 @@
 \newtheorem{theorem}{Theorem}[section]
 \newtheorem{remark}{Remark}[section]
 
-\title{\textbf{Differential Circuit Analysis Framework (DCAF)}\\[0.5em]
-\Large Complete Master Specification\\[0.3em]
-\normalsize Architecture-Agnostic Neural Circuit Discovery}
-\author{David Kogan}
-\date{}
+\title{\textbf{DCAF: A Comprehensive Architecture-Agnostic\\ Methodology for Behavior-Specific Circuit Isolation}}
+\author{David Kogan\\
+\texttt{davidkny22@gmail.com}}
+\date{\vspace{-2em}}
 
 \begin{document}
 \maketitle
-\thispagestyle{firstpage}
+\vspace{-1.5em}
 
 \begin{abstract}
-\noindent The Differential Circuit Analysis Framework (DCAF) is a comprehensive methodology for identifying, characterizing, and mapping neural network circuits that implement specific behaviors. By treating training signals as controlled perturbation experiments and triangulating evidence across weight deltas, activation patterns, and latent geometry, DCAF discovers which components implement a target behavior, maps their causal connections, and classifies their functional roles. This document provides the complete mathematical specification, including both the universal architecture-agnostic framework and domain-specific instantiations for transformers, vision models, and reinforcement learning systems.
+\noindent
+Mechanistic interpretability has produced powerful methods for discovering neural circuits, yet existing approaches typically rely on a single attribution technique, lack calibrated confidence scores, and operate at head-level or edge-level granularity---missing the projection-level structure (e.g., $W_Q$, $W_K$, $W_V$, $W_O$) where behavioral signatures diverge within the same component. We introduce the Differential Circuit Analysis Framework (DCAF), which treats training signals as controlled perturbation experiments: by training a model under 11 paired behavioral objectives (5 target-reinforcing, 5 opposite-reinforcing, 1 neutral baseline) and triangulating evidence across weight deltas, activation patterns, and latent geometry, DCAF discovers candidate circuit components, maps their causal connections, and classifies their functional roles. Key technical contributions include: (i)~the 11-paired-objective probe configuration that uses preference optimization, supervised fine-tuning, gradient ascent, and sequential training as orthogonal discovery signals; (ii)~three complementary discovery paths (weight-based, activation-based, gradient-based) integrated through a triangulated confidence score; (iii)~the Direction Convergence Score (DCS), which measures cross-signal agreement on behavioral directions in the residual stream; and (iv)~a 7-phase ablation protocol with interaction discovery and adaptive tiered functional classification. The framework is formulated in an architecture-agnostic manner with a complete transformer instantiation. A reference implementation is publicly available at \url{https://github.com/davidkny22/dcaf-public}.
 \end{abstract}
 
 \tableofcontents
 \newpage
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\part{Universal Framework}
+\section{Introduction}
+\label{sec:introduction}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Neural networks implement behaviors through identifiable computational circuits---sparse subgraphs of model components that mediate specific input-output relationships. The field of mechanistic interpretability has made remarkable progress in discovering these circuits, from the manual reverse-engineering of the Indirect Object Identification (IOI) circuit in GPT-2 Small \citep{wang2023ioi}---26 attention heads organized into 7 functional classes---to automated methods such as ACDC \citep{conmy2023acdc}, Attribution Patching \citep{syed2024attribution}, and Anthropic's Circuit Tracing \citep{ameisen2025tracing}. The foundational vocabulary of residual streams, virtual weights, and QK/OV projection-level decomposition was established by \citet{elhage2021mathematical}, and the broader circuits hypothesis articulated by \citet{olah2020zoom}.
+
+Despite this progress, several limitations constrain current circuit discovery methodology. First, single-method circuit discovery exhibits high estimator variance: \citet{meloux2025variance} demonstrate that EAP-IG circuit attributions have substantial variance under bootstrap resampling, undermining replicability. Second, the field has identified ``interpretability illusions'' arising from single-method conclusions and has explicitly called for cross-method validation \citep{sharkey2025openproblems}. Third, existing automated methods operate above the projection level---ACDC at head/edge granularity, CD-T at head-plus-position granularity \citep{hsu2025cdt}---despite \citeauthor{elhage2021mathematical}'s (\citeyear{elhage2021mathematical}) foundational framework already defining projection-level structure. Fourth, activation patching results vary dramatically with hyperparameter choices \citep{zhang2024bestpractices}, revealing methodological fragility. Fifth, no published framework uses paired training perturbations as primary discovery probes, despite growing evidence that training dynamics reveal circuit structure: \citet{prakash2024finetuning} show that fine-tuning enhances existing mechanisms, and \citet{tigges2024consistent} demonstrate that circuit analyses are consistent across training and scale.
+
+We introduce the Differential Circuit Analysis Framework (DCAF), which addresses these limitations through an integrative approach. DCAF synthesizes projection-level analysis \citep{elhage2021mathematical}, training-as-probe methodology \citep{prakash2024finetuning,tigges2024consistent}, the triangulation principle advocated by \citet{long2025triangulation} and \citet{sharkey2025openproblems}, and multi-method validation strategies emerging from the BlackboxNLP 2025 shared task \citep{mondorf2025ensemble} into a unified, formally specified protocol. Rather than introducing a single new technique, DCAF provides a complete pipeline that integrates independently established threads into a coherent framework with novel operational instruments: the 11-paired-objective probe configuration, the Direction Convergence Score (DCS), the 7-phase ablation protocol with interaction discovery, and adaptive tiered functional classification. These specific instruments have no direct named precedents in the literature.
+
+The key contributions of this work are:
+\begin{enumerate}[nosep]
+\item \textbf{Multi-signal training perturbation protocol.} We systematize the insights of \citet{prakash2024finetuning} and \citet{tigges2024consistent} into a complete 11-signal configuration that uses preference optimization, supervised fine-tuning, gradient ascent, and sequential training as orthogonal discovery probes, extending contrastive methods \citep{panickssery2024caa,arditi2024refusal} from inference-time prompt contrasts to training-time signal contrasts.
+
+\item \textbf{Triangulated confidence scoring.} We implement the triangulation principle called for by \citet{long2025triangulation} and \citet{sharkey2025openproblems} through a specific operationalization across weight, activation, and geometric domains, producing calibrated confidence scores that reflect convergent evidence.
+
+\item \textbf{Projection-level discovery at scale.} We operationalize at scale the QK/OV decomposition introduced by \citet{elhage2021mathematical}, extending it to gated MLP architectures and integrating it into an automated discovery pipeline alongside parameter-space methods such as APD \citep{braun2025apd}.
+
+\item \textbf{Ablation protocol with interaction discovery.} We specify a 7-phase ablation methodology that efficiently discovers individual, pairwise, and triple component interactions through seven parallel search strategies, producing functional classifications and interaction-enriched circuit graphs.
+
+\item \textbf{Architecture-agnostic formulation.} The core methodology---perturbation experiments, multi-domain evidence, triangulated confidence---is defined independently of model architecture, with a complete transformer instantiation and preliminary sketches for vision and reinforcement learning systems.
+\end{enumerate}
+
+A reference implementation of DCAF is publicly available at \url{https://github.com/davidkny22/dcaf-public}. The implementation covers the core mathematical framework, multi-path discovery, domain analysis modules (weight, activation, geometry), training diagnostics, confidence scoring, the 7-phase ablation protocol, circuit graph reconstruction, and CLI tooling for transformer architectures. Features currently under development include direction synthesis (global residual stream directions and DCS computation), MIB benchmark compatibility, and vision/diffusion model instantiation.
+
+The remainder of this paper is organized as follows. Section~\ref{sec:related} surveys related work. Sections~\ref{sec:foundations}--\ref{sec:extensibility} present the complete technical framework. Section~\ref{sec:experiments} is reserved for empirical validation. Section~\ref{sec:limitations} discusses limitations, and Section~\ref{sec:conclusion} concludes. Architecture-specific implementations and a complete notation reference appear in the appendices.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Related Work}
+\label{sec:related}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+DCAF builds on and extends a rich body of work in mechanistic interpretability, representation engineering, and AI safety. We organize prior art into seven areas and position DCAF relative to each.
+
+\subsection{Circuit Discovery Methods}
+
+\textbf{Manual circuit analysis.} \citet{wang2023ioi} reverse-engineered the IOI circuit in GPT-2 Small, identifying 26 attention heads in 7 functional classes through causal intervention. \citet{hanna2023greaterthan} similarly dissected the greater-than circuit, and \citet{heimersheim2023docstring} analyzed a Python docstring circuit in a 4-layer model. These studies demonstrated that transformer behaviors are implemented by identifiable circuits but required extensive manual effort.
+
+\textbf{Automated discovery.} \citet{conmy2023acdc} introduced Automated Circuit DisCovery (ACDC), which scores edge importance via activation patching and prunes below a threshold, operating at head/MLP granularity. \citet{syed2024attribution} showed that Attribution Patching (EAP)---a linear approximation requiring only two forward passes and one backward pass---outperforms ACDC in edge recovery. \citet{goldowsky2023path} formalized path patching, the method ACDC automates. \citet{hsu2025cdt} achieved 97\% ROC AUC with Contextual Decomposition for Transformers (CD-T), reducing circuit discovery runtime from hours to seconds. \citet{li2024optimal} provided theoretical bounds for optimal ablation, producing smaller and more faithful circuits. \citet{edin2025gim} introduced Gradient Interaction Modifications (GIM), a gradient-based method achieving high accuracy on the Mechanistic Interpretability Benchmark \citep{mueller2025mib}. \citet{hadad2026formal} adapted neural network verification to circuit discovery with provable guarantees.
+
+\textbf{Production-scale methods.} Anthropic's Circuit Tracing \citep{ameisen2025tracing,lindsey2025biology} introduced cross-layer transcoders and attribution graphs applied to Claude 3.5 Haiku. \citet{lieberum2023chinchilla} demonstrated circuit analysis at 70B scale.
+
+DCAF complements these approaches by operating at the projection level within components (e.g., $W_Q$, $W_K$, $W_V$, $W_O$) rather than at the head/edge level, and by using multiple independent training perturbations as discovery probes rather than a single attribution method. DCAF's ablation protocol could integrate the theoretically grounded ablation techniques of \citet{li2024optimal}.
+
+\subsection{Representation Engineering and Steering Vectors}
+
+\citet{zou2023repe} introduced Representation Engineering (RepE), examining population-level representations to monitor cognitive phenomena. \citet{arditi2024refusal} identified a single 1D subspace mediating refusal across 13 models up to 72B parameters. \citet{li2023iti} used linear probes for Inference-Time Intervention on truthfulness. \citet{marks2024geometry} established causal links between truth representations and outputs through the Geometry of Truth. \citet{tigges2023sentiment} identified sentiment as a single linear dimension concentrating at syntactically neutral positions. \citet{turner2023actadd} proposed activation addition (ActAdd) for inference-time steering. \citet{panickssery2024caa} systematized contrastive activation addition with paired positive/negative behavioral examples for Llama~2. \citet{park2024linear} formalized the Linear Representation Hypothesis. \citet{zhang2024bestpractices} demonstrated that activation patching results vary substantially with hyperparameter choices.
+
+DCAF extends contrastive methods from inference-time prompt contrasts to training-time signal contrasts and requires convergence across multiple independent extraction methods. Where existing approaches extract directions from a single contrast pair, DCAF validates directions through cross-signal convergence: if multiple training signals independently produce directions that agree (as measured by DCS), the direction is robust to methodology choice.
+
+\subsection{Training Dynamics as an Interpretability Lens}
+
+This cluster represents the closest prior art to DCAF's training-perturbation methodology. \citet{nanda2023grokking} provided the earliest example of using training trajectories to expose circuit formation via progress measures for grokking. \citet{prakash2024finetuning} introduced Cross-Model Activation Patching (CMAP) and showed that fine-tuning enhances existing mechanisms---the most direct precedent for training-as-discovery. \citet{tigges2024consistent} demonstrated that LLM circuit analyses are consistent across training and scale, providing evidence that training dynamics are a reliable lens. \citet{wang2025finetuning} tracked edge changes across fine-tuning checkpoints. \citet{singh2024induction} used optogenetics-inspired causal interventions throughout training to study induction head formation.
+
+DCAF systematizes these insights into a complete multi-signal protocol, using 11 paired training objectives as orthogonal probes. Where prior work uses training dynamics as a post-hoc analytical lens, DCAF treats each training signal as a controlled perturbation experiment whose weight deltas, activation changes, and geometric effects are triangulated into confidence scores.
+
+\subsection{Weight-Space and Parameter-Level Analysis}
+
+\citet{elhage2021mathematical} defined the QK and OV decomposition of attention heads---already operating at projection level---as the foundational analytical framework. \citet{braun2025apd} introduced Attribution-based Parameter Decomposition (APD), the most explicit ``weights-not-activations'' circuit method, operating directly across all projection matrices. \citet{gao2025weightsparse} trained models with $L_0$-sparse weights to produce intrinsic projection-level circuits. \citet{dooms2024bilinear} enabled weight-based mechanistic interpretability through bilinear MLPs. \citet{golimblevskaia2025circuitinsights} introduced WeightLens and CircuitLens for interpreting features directly from learned weights.
+
+DCAF does not claim to have invented projection-level analysis. Rather, it operationalizes at scale the QK/OV decomposition introduced by \citet{elhage2021mathematical}, extending it to gated MLP architectures ($W_{\text{gate}}$, $W_{\text{up}}$, $W_{\text{down}}$) and integrating it into an automated discovery pipeline. The framework's two-level hierarchy---projections as analysis units, components as graph nodes---allows sub-component weight analysis while maintaining compatibility with component-level activation and geometric methods.
+
+\subsection{Sparse Autoencoders and Feature Discovery}
+
+\citet{cunningham2024sae} and \citet{bricken2023monosemanticity} concurrently established sparse autoencoders (SAEs) as decomposition tools for language model activations. \citet{gao2024scaling} scaled SAEs to GPT-4 with 16M latents. \citet{lieberum2024gemma} released Gemma Scope, providing open-source SAEs across all layers of Gemma~2. \citet{marks2025sparse} extended SAEs to Sparse Feature Circuits, discovering causal subgraphs of interpretable features. \citet{templeton2024scaling} scaled monosemanticity to Claude~3 Sonnet. \citet{he2024dictionary} used dictionary learning as an alternative to activation patching for circuit discovery.
+
+DCAF is complementary to SAE-based methods. SAEs decompose activations into interpretable features; DCAF identifies which components are behaviorally relevant through training perturbations. SAE features could serve as activation probes within DCAF's framework, and DCAF's weight-delta analysis operates orthogonally to SAE-based feature flow analysis.
+
+\subsection{Safety Circuit Protection}
+
+\citet{zou2024circuitbreakers} proposed Circuit Breakers for identifying and breaking representational pathways for undesirable behaviors. \citet{han2025fgsn} identified safety neurons and proposed Safety Neuron Tuning, finding that edits to a sparse subset of safety neurons (often $<$5\%, dropping to $<$1\% for incremental safety dimensions) can reduce fine-tuning risks. \citet{huang2025booster} introduced BOOSTER for defense against adversarial fine-tuning using safety-specific neuron detection. \citet{zhu2025safetylock} developed SafetyLock, extracting safety-bias directions and re-injecting them post-fine-tuning. \citet{wei2024brittleness} localized safety to $\sim$3\% of parameters via pruning and low-rank modifications. \citet{qi2024finetuning} established the foundational threat model showing that fine-tuning compromises safety. \citet{lermen2023lora} demonstrated that LoRA fine-tuning efficiently undoes safety training.
+
+DCAF provides the upstream discovery methodology that these protection methods require: identifying which projection matrices implement safety behaviors, at what confidence, and through which functional roles. The framework's opposition testing ($\mathcal{T}^+$/$\mathcal{T}^-$) directly reveals bidirectional control points---components where the same weights mediate both safe and unsafe behavior.
+
+\subsection{Methodological Foundations}
+
+\citet{long2025triangulation} formalized triangulation as an acceptance rule for mechanistic interpretability, explicitly advocating for multi-method validation. \citet{meloux2025variance} reframed circuit discovery as a high-variance statistical estimation problem, recommending bootstrap-based uncertainty quantification. \citet{mondorf2025ensemble} explored ensemble strategies for circuit localization at BlackboxNLP 2025, finding that combining methods improves performance. \citet{geiger2021causal} developed causal abstractions of neural networks, and \citet{geiger2025causal} unified activation patching, path patching, causal scrubbing, and distributed alignment search under a single theoretical framework. \citet{belinkov2022probing} provided a comprehensive analysis of probing classifiers, and \citet{hewitt2019structural} introduced the structural probe for syntax. \citet{meng2022rome} localized factual recall to mid-layer MLPs. \citet{rafailov2023dpo} introduced Direct Preference Optimization, one of the training objectives DCAF uses as a discovery signal.
+
+DCAF implements the triangulation principle through a specific operationalization: weight deltas capture what optimization modified, activation changes capture representational reorganization, and latent geometry captures behavioral direction structure. The DCS metric provides a concrete measure of the cross-signal convergence that \citet{sharkey2025openproblems} call for and \citet{meloux2025variance} demonstrate is needed.
+
+\newpage
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Foundations}
+\label{sec:foundations}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \begin{definition}[Configurable Baseline Model]
@@ -273,7 +347,7 @@ Training runs do not always improve monotonically. A signal may achieve its stro
 \label{def:peak-checkpoint}
 For training signal $t_i$, let $\{W_{i,\tau}\}_{\tau=1}^{T}$ be the sequence of checkpoints saved at evaluation intervals during training. The peak checkpoint $W_{i,\text{peak}}$ is the checkpoint at which the signal-specific behavioral metric $m_{i,\tau}$ achieves its confirmed maximum:
 \begin{equation}
-W_{i,\text{peak}} = W_{i,\tau^*}, \qquad \tau^* = \arg\max_\tau\; m_{i,\tau} \quad \text{subject to } \textsc{Confirmed}(\tau)
+W_{i,\text{peak}} = W_{i,\tau^*}, \qquad \tau^* = \arg\max_\tau\; m_{i,\tau} \quad \text{subject to } \texttt{Confirmed}(\tau)
 \end{equation}
 where the behavioral metric $m_{i,\tau}$ is signal-type-specific:
 \begin{equation}
@@ -286,7 +360,7 @@ R(W_{i,\tau}) & \text{if } t_i \in \{\text{RL signals}\}
 \end{equation}
 The confirmation criterion prevents selecting transient spikes as the peak:
 \begin{equation}
-\textsc{Confirmed}(\tau) = \bigl(m_{i,\tau} = \max_{\tau' \leq \tau} m_{i,\tau'}\bigr) \;\wedge\; \left(\frac{1}{K}\sum_{j=1}^{K} m_{i,\tau+j} \geq m_{i,\tau} - \delta \cdot m_{i,\tau}\right)
+\texttt{Confirmed}(\tau) = \bigl(m_{i,\tau} = \max_{\tau' \leq \tau} m_{i,\tau'}\bigr) \;\wedge\; \left(\frac{1}{K}\sum_{j=1}^{K} m_{i,\tau+j} \geq m_{i,\tau} - \delta \cdot m_{i,\tau}\right)
 \end{equation}
 where $K$ is the confirmation window (default: $K=3$) and $\delta$ is the stability tolerance (default: $\delta = 0.05$). A candidate peak is confirmed only if it is the running maximum \emph{and} the subsequent $K$ evaluations remain within $\delta$ of the peak value.
 \end{definition}
@@ -791,6 +865,10 @@ n^{(k)}_A = \sum_{i \in \mathcal{T}} \sum_{\pi \in \Pi} \text{sig}_A(k, i, \pi),
 \end{equation}
 Activation confidence is inherently component-level throughout; hooks capture at head outputs and MLP outputs.
 \end{definition}
+
+\begin{remark}[Probe Construction: Matched Contrast Pairs]
+Effective probe construction requires \textbf{matched contrast pairs} where behavior-positive and behavior-negative inputs differ by exactly 1--3 tokens, holding all other features constant (topic, length, syntax, vocabulary, position). This isolates the behavioral mechanism from confounds, following the ABC counterfactual design introduced by \citet{wang2023ioi}. For example, in IOI circuit discovery, behavior-positive probes use standard sentences with a repeated subject name (``Then, Mary and John went to the store. John gave a drink to''), while behavior-negative probes replace the repeated name with a novel third name (``Then, Mary and Chris went to the store. Chris gave a drink to'')---a single-word pivot that removes the duplicate-token signal while preserving all other structure. The same principle applies across behaviors: safety probes should differ only in the presence of harmful content, truthfulness probes only in factual accuracy, and so on. Poorly controlled probes---where positive and negative inputs differ in length, topic, or style---may cause DCAF to identify components that encode those confounds rather than the target behavior.
+\end{remark}
 
 \begin{remark}[No Opposition in Activation Domain]
 Activation criteria use significance only---no opposition predicate. High-dimensional activation vectors lack well-defined ``opposite direction.'' Opposition evidence comes from weight analysis (\S\ref{sec:weight-analysis}).
@@ -1652,41 +1730,7 @@ G = \left(V, \{(k, k') : e(k, k') = 1\}\right)
 \end{definition}
 
 \begin{remark}[Circuit Graph Output Format]
-Example JSON representation:
-\begin{verbatim}
-{
-  "nodes": [
-    {"id": "L10_MLP", "confidence": 0.91,
-     "discovery": {
-       "paths": ["W", "A"], "path_count": 2, "bonus": 0.15
-     },
-     "domain_scores": {"C_W": 0.82, "C_A": 0.88, "C_G": 0.79},
-     "classification": {
-       "primary": [{"function": "recognition", "confidence": 0.95, "impact": 0.42}],
-       "auxiliary": [{"function": "steering", "confidence": 0.72, "impact": 0.30}],
-       "status": "Confirmed", "diffuse": false, "tight_cluster": false,
-       "threshold_used": 0.8, "max_impact": 0.44
-     }, "bidirectional": true},
-    {"id": "L12H3", "confidence": 0.87,
-     "discovery": {
-       "paths": ["A"], "path_count": 1, "bonus": 0.0
-     },
-     "domain_scores": {"C_W": 0.35, "C_A": 0.91, "C_G": 0.85},
-     "classification": {
-       "primary": [{"function": "steering", "confidence": 1.0, "impact": 0.38}],
-       "auxiliary": [],
-       "status": "Confirmed", "diffuse": false, "tight_cluster": true,
-       "threshold_used": 0.7, "max_impact": 0.38
-     }, "bidirectional": false}
-  ],
-  "edges": [
-    {"from": "L10_MLP", "to": "L12H3",
-     "weight": 0.85, "dcaf_validated": true,
-     "via": {"Q": 0.15, "K": 0.72, "V": 0.13}}
-  ]
-}
-\end{verbatim}
-Fields include: discovery attribution (which paths found it, path count, multi-path bonus), domain-level confidence scores ($C_W$, $C_A$, $C_G$), unified confidence (with bonus), adaptive tiered functional classification, bidirectionality status, edge weights, and pathway attribution. Note L12H3 is a leverage point: discovered via Path 2 (activation) with low $C_W$ but high $C_A$---small weight changes, large activation impact. The pathway metadata shows L10\_MLP primarily affects L12H3 through the key pathway ($w_K = 0.72$), suggesting L10\_MLP writes information that L12H3 uses to determine \emph{where} to attend.
+The circuit graph is serialized as a JSON structure containing node metadata (discovery attribution, domain-level confidence scores, adaptive tiered functional classification, bidirectionality status) and edge metadata (causal weight, validation status, pathway attribution). An illustrative example is provided in Appendix~\ref{app:output-format}.
 \end{remark}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -2131,6 +2175,25 @@ Key properties of adaptive tiered classification:
 \end{itemize}
 \end{remark}
 
+\begin{remark}[Probe-Impact Patterns and Circuit Interpretation]
+The combination of probe-type impacts across the three tiers reveals the functional signature of each component. Characteristic patterns include:
+\begin{center}
+\begin{tabular}{lp{0.62\textwidth}}
+\toprule
+\textbf{Impact Pattern} & \textbf{Interpretation} \\
+\midrule
+$\pi_{\text{detect}}$ only & Encodes behavioral structure but does not directly affect output \\
+$\pi_{\text{decide}}$ only & Directly produces behavioral output without encoding structural features \\
+$\pi_{\text{eval}}$ only & Evaluates path quality without encoding or producing \\
+$\pi_{\text{detect}} + \pi_{\text{eval}}$ & Encodes structure and evaluates paths (inhibition signature) \\
+$\pi_{\text{decide}} + \pi_{\text{eval}}$ & Produces output and evaluates quality (mover signature) \\
+All three & Central integration point for the behavioral circuit \\
+\bottomrule
+\end{tabular}
+\end{center}
+These patterns emerge naturally from ablation impact measurements and provide interpretive depth beyond the primary/auxiliary tier assignment. Components with the same primary classification but different multi-probe signatures may implement different mechanisms within the same functional role.
+\end{remark}
+
 \begin{remark}[Ablation-Induced Activation Analysis]
 For behaviorally relevant components, ablation also reveals circuit connectivity: which other components show activation changes when $k$ is ablated? This contributes to edge discovery in graph reconstruction.
 \end{remark}
@@ -2154,7 +2217,7 @@ Under Option A, $\mathcal{M}_0 = \mathcal{M}_{\text{pre}}$ and the instruction-t
 \noindent\textbf{Pipeline Steps:}
 \begin{enumerate}[nosep]
 \setcounter{enumi}{-1}
-\item \textbf{Baseline Selection (Design Decision):} Choose $\mathcal{M}_0$ per Definition~\ref{def:baseline-model}. If Option B, instruction-tune $\mathcal{M}_{\text{pre}}$ on $\mathcal{D}_{\text{IT}}$ and validate (see Appendix~\ref{sec:implementation}).
+\item \textbf{Baseline Selection (Design Decision):} Choose $\mathcal{M}_0$ per Definition~\ref{def:baseline-model}. If Option B, instruction-tune $\mathcal{M}_{\text{pre}}$ on $\mathcal{D}_{\text{IT}}$ and validate (see Appendix~\ref{app:implementation}).
 \item \textbf{Signal Training:} Run all training signals from $\mathcal{M}_0$ with periodic checkpoint evaluation. Register \texttt{hook\_resid\_post} alongside component hooks for residual stream capture at positions $\mathcal{P} = \{-1,-2,-3,-5\}$.
 \item \textbf{Peak Checkpoint Selection:} For each signal, identify the confirmed peak checkpoint $W_{i,\text{peak}}$ using stability-confirmed maximum behavioral metrics
 \item \textbf{Weight Delta Computation:} Compute $\Delta W_i = W_{i,\text{peak}} - W_0$ for all signals (where $W_0$ are the parameters of $\mathcal{M}_0$)
@@ -2305,6 +2368,7 @@ This approach avoids hand-coded categories, allowing dynamic pattern discovery a
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Extensibility}
 \label{sec:extensibility}
+%% NOTE: Experiments, Limitations, and Conclusion sections follow after this section, before Part II.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \begin{remark}[Adding Signals]
@@ -2328,14 +2392,62 @@ where $R$ is cumulative reward. All other DCAF machinery (discovery, confidence,
 \end{remark}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\part{Architecture-Specific Implementations}
+\section{Experiments}
+\label{sec:experiments}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% EMPIRICAL VALIDATION TO BE INSERTED
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Discussion and Limitations}
+\label{sec:limitations}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+DCAF provides a formally specified protocol integrating projection-level analysis, multi-signal training perturbations, and triangulated confidence scoring into a unified pipeline for neural circuit discovery. We discuss its current limitations honestly.
+
+\textbf{Scalability via training dependence.} DCAF's core mechanism---using training as the primary discovery intervention---means computational cost scales linearly with model size multiplied by signal count. For a 70B-parameter model with the full 11-signal protocol, this entails 11 fine-tuning runs, each potentially requiring significant GPU hours. This is fundamentally different from inference-time methods such as ACDC \citep{conmy2023acdc} or Attribution Patching \citep{syed2024attribution}, which scale with forward passes rather than training runs. The 3-signal minimal protocol ($t_1$, $t_6$, $t_{11}$) reduces the burden to three runs at the cost of weaker opposition measurement and no signal-type diversity. Parameter-efficient fine-tuning (e.g., LoRA) can reduce per-run cost, and signal training can piggy-back on existing fine-tuning pipelines. Baseline model activations ($\mathcal{M}_0$) are cached and shared across all signals. Nevertheless, the full protocol is best suited for high-stakes analyses---such as safety circuit identification or pre-deployment auditing---where confidence in circuit identification justifies the computational investment. The fundamental tradeoff is confidence for compute: DCAF trades the efficiency of single-pass attribution for the robustness of multi-signal convergence.
+
+\textbf{Empirical validation.} As of this writing, the framework has been implemented and tested on individual modules, but systematic end-to-end validation on production-scale models with comparison to established benchmarks (particularly MIB \citep{mueller2025mib}) is ongoing. We position this work as a formally specified methodological protocol in the spirit of pre-registration---making explicit the complete analysis procedure so that empirical instantiation can be evaluated against a fixed specification. This approach has precedent in mechanistic interpretability: \citet{elhage2021mathematical} established the field's mathematical vocabulary primarily through theoretical exposition, and \citet{sharkey2025openproblems} published an 89-page research agenda without new experiments.
+
+\textbf{Architecture-specific instantiations.} The core framework is architecture-agnostic, but the complete transformer instantiation is the only validated domain-specific implementation. Vision, diffusion, and reinforcement learning instantiations remain preliminary sketches. Extending the probe type definitions ($\pi_{\text{detect}}$, $\pi_{\text{decide}}$, $\pi_{\text{eval}}$) to non-sequential architectures requires domain-specific design decisions that have not been validated.
+
+\textbf{Threshold sensitivity.} The framework uses many configurable thresholds ($\tau_{\text{sig}}=85$, $\tau_{\text{base}}=50$, $\tau_{\text{act}}=85$, $\tau_{\text{comp}}=70$, $\tau_{\text{opp}}=0.3$, among others) whose optimal values may be behavior- and model-dependent. While percentile-based thresholds adapt automatically to model scale and training intensity, the choice of which percentile to use (e.g., 85th vs.\ 90th) affects the sensitivity-specificity tradeoff. Systematic sensitivity analysis across behaviors and model scales is needed.
+
+\textbf{Behavioral signal construction.} The framework assumes that behavioral training signals can be cleanly constructed---that target and opposite behaviors can be operationalized as training objectives with available datasets. This holds well for studied behaviors (safety refusal, truthfulness, sentiment) but may not hold for subtle or ill-defined behaviors where the target/opposite distinction is ambiguous or where high-quality training data is unavailable.
+
+\textbf{Peak checkpoint selection.} The peak selection mechanism assumes behavioral metrics are available and well-defined during training. For behaviors where evaluation is expensive, noisy, or requires human judgment, the confirmation window ($K=3$, $\delta=0.05$) may not reliably identify the optimal checkpoint.
+
+\textbf{Training stochasticity and circular reasoning risk.} The framework assumes that training perturbations faithfully reveal circuit structure---that weight deltas produced by behavioral training reflect the model's behavioral circuitry rather than artifacts of the optimization process. If training dynamics are non-deterministic (different random seeds, learning rate schedules, or data orderings producing different weight delta patterns), the discovered circuits may partly reflect optimization trajectories rather than stable model structure. The multi-signal protocol mitigates this risk through convergence: if 11 independent training runs with different objectives, loss functions, and starting points all implicate the same projections, the finding is unlikely to be an artifact of any single run's stochasticity. The DCS metric explicitly measures this cross-signal agreement. Nevertheless, the degree to which training-discovered circuits correspond to circuits discoverable by purely inference-time methods remains an empirical question that systematic benchmarking against MIB and comparison with ACDC/EAP results on shared tasks will help resolve.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusion}
+\label{sec:conclusion}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+We have presented the Differential Circuit Analysis Framework (DCAF), a formally specified protocol that integrates projection-level analysis, multi-signal training perturbations, and triangulated confidence scoring into a unified pipeline for neural circuit discovery. DCAF synthesizes independently established threads in mechanistic interpretability---the QK/OV decomposition \citep{elhage2021mathematical}, training-as-probe methodology \citep{prakash2024finetuning,tigges2024consistent}, the triangulation principle \citep{long2025triangulation,sharkey2025openproblems}, and multi-method validation \citep{mondorf2025ensemble}---into a coherent framework with novel operational instruments: the 11-paired-objective probe configuration, the Direction Convergence Score (DCS), the 7-phase ablation protocol with interaction discovery, and adaptive tiered functional classification.
+
+The framework is implemented as an open-source toolkit with the core mathematical framework, domain analysis modules, training infrastructure, and CLI tooling functional for transformer architectures. Several directions for future work are immediate: systematic benchmarking on MIB \citep{mueller2025mib} to enable direct comparison with existing circuit discovery methods; scaling validation to larger models (7B+) to assess whether DCAF's projection-level granularity yields discoveries that head-level methods miss; completing the direction synthesis module (DCS computation and composition analysis); and expanding architecture-specific instantiations to vision and reinforcement learning systems.
+
+More broadly, DCAF addresses a structural gap identified by recent work: the field has spent two years documenting the limits of single-method circuit discovery \citep{meloux2025variance,zhang2024bestpractices} and calling for principled multi-signal validation \citep{sharkey2025openproblems,long2025triangulation}, but has not yet supplied an integrated protocol that operationalizes these principles. DCAF is one answer to that call. Whether its specific configuration of 11 training signals, 3 discovery paths, and triangulated confidence proves to be the right integration remains an empirical question---one that the framework's formal specification and public implementation are designed to help the community answer.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\bibliographystyle{plainnat}
+\bibliography{dcaf}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Large Language Models (Transformers)}
+\appendix
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\subsection{Probe Type Instantiation}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Architecture-Specific Implementations}
+\label{app:arch}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Large Language Models (Transformers)}
+\label{app:transformers}
+
+\subsubsection{Probe Type Instantiation}
 
 For language models, the universal probe types instantiate as:
 \begin{description}[leftmargin=2em, nosep]
@@ -2348,7 +2460,15 @@ For language models, the universal probe types instantiate as:
 The generation window $N$ for $\pi_F$ should capture the decision phase, not execution. For safety behaviors, decisions typically lock in by tokens 3--4 (``I cannot...'' vs. ``Sure, here's...''), making $N=10$ sufficient with margin. Other behaviors may require different windows based on when their steering decisions manifest. Benefits of limited capture: reduced memory, faster processing, cleaner signal (decision without execution artifacts).
 \end{remark}
 
-\subsection{Component Decomposition}
+\begin{remark}[Teacher Forcing: Delta-of-Deltas Signal]
+Teacher forcing probes ($\pi_T$) identify generation steering components via a delta-of-deltas measurement. For each probe, two forward passes are performed: one with the target continuation prefix (e.g., the correct name) and one with the opposite continuation prefix (e.g., the incorrect name). The steering signal at component $k$ is:
+\begin{equation}
+\text{signal}^{(k)} = \left\|\Delta A^{(k)}_{\text{post}}\right\| - \left\|\Delta A^{(k)}_{\text{pre}}\right\|
+\end{equation}
+where $\Delta A^{(k)}_{\text{pre}} = A^{(k)}_{\text{target,pre}} - A^{(k)}_{\text{opposite,pre}}$ is the activation difference between continuations in the baseline model (typically small---the untrained model does not distinguish), and $\Delta A^{(k)}_{\text{post}} = A^{(k)}_{\text{target,post}} - A^{(k)}_{\text{opposite,post}}$ is the same difference after training (large at components that learned to evaluate path quality). Components with large signal values are those where training created a distinction between the target and opposite continuation paths.
+\end{remark}
+
+\subsubsection{Component Decomposition}
 
 \begin{remark}[Component Identification Convention]
 For transformer models, components are identified using a systematic naming convention:
@@ -2359,8 +2479,7 @@ For transformer models, components are identified using a systematic naming conv
 This convention enables unambiguous reference to specific components across analysis outputs, circuit graphs, and steering results.
 \end{remark}
 
-\subsubsection{Attention Components}
-
+\paragraph{Attention Components.}
 For each layer $\ell$ and head $h$:
 \begin{align}
 Q_{\ell,h} &= X W^{(\ell,h)}_Q & &\text{(query: what to look for)} \\
@@ -2380,8 +2499,7 @@ Each projection answers a different question about training-induced changes:
 \end{description}
 \end{remark}
 
-\subsubsection{MLP Components}
-
+\paragraph{MLP Components.}
 For layer $\ell$ (assuming gated architectures like Llama):
 \begin{align}
 G_\ell &= \sigma(X W^{(\ell)}_{\text{gate}}) & &\text{(gate: what passes through)} \\
@@ -2412,7 +2530,7 @@ In GQA architectures (e.g., Gemma 2 2B with 8 query heads and 4 KV heads per lay
 Standard multi-head attention (MHA) is the special case where $\text{group\_size} = 1$.
 \end{remark}
 
-\subsubsection{Normalization and Residual Components}
+\paragraph{Normalization and Residual Components.}
 
 \begin{align}
 N^{\text{pre}}_\ell &= \text{LayerNorm}(X_\ell) & &\text{(pre-attention)} \\
@@ -2425,26 +2543,26 @@ R^{\text{post-attn}}_\ell &= X_\ell + \text{Attn}_\ell \\
 R^{\text{post-mlp}}_\ell &= R^{\text{post-attn}}_\ell + \text{MLP}_\ell
 \end{align}
 
-\subsection{Activation Capture Points}
+\subsubsection{Activation Capture Points}
 
-\subsubsection{Attention Patterns}
+\paragraph{Attention Patterns.}
 \begin{equation}
 P_{\ell,h} = \text{softmax}\left(\frac{Q_{\ell,h} K_{\ell,h}^\top}{\sqrt{d_h}}\right) \in \mathbb{R}^{n \times n}
 \end{equation}
 
-\subsubsection{Attention Entropy}
+\paragraph{Attention Entropy.}
 \begin{equation}
 H_{\ell,h}[s] = -\sum_j P_{\ell,h}[s, j] \log P_{\ell,h}[s, j]
 \end{equation}
 High entropy indicates diffuse attention; low entropy indicates focused attention.
 
-\subsubsection{Logit Lens}
+\paragraph{Logit Lens.}
 Vocabulary projection at layer $\ell$:
 \begin{equation}
 L_\ell = R_\ell W_{\text{unembed}} \in \mathbb{R}^{n \times |\mathcal{V}|}
 \end{equation}
 
-\subsubsection{Per-Position Capture}
+\paragraph{Per-Position Capture.}
 For sequence position $s \in \{1, \ldots, n\}$:
 \begin{equation}
 A^{(k)}[s] \in \mathbb{R}^{d_k}
@@ -2461,7 +2579,7 @@ Behavioral processing may localize to specific positions. Track these separately
 Aggregating across all positions can destroy localized signals. Position-filtered analysis enables precise localization of where behavioral processing occurs.
 \end{remark}
 
-\subsection{Differential Analysis Methods}
+\subsubsection{Differential Analysis Methods}
 
 \begin{definition}[Differential Logit Lens]
 \begin{equation}
@@ -2504,7 +2622,7 @@ Train linear probes $f^{\text{base}}, f^{\text{peak}}: \mathbb{R}^{d_k} \to \{0,
 Positive $\Delta \text{acc}$: training made behavior more linearly separable.
 \end{definition}
 
-\subsection{Example: Safety Behavior Circuit Discovery}
+\subsubsection{Example: Safety Behavior Circuit Discovery}
 
 \noindent\textbf{Target behavior:} Refusing harmful requests
 
@@ -2529,9 +2647,7 @@ Positive $\Delta \text{acc}$: training made behavior more linearly separable.
 \item \textbf{Preference} components: Late-layer attention heads evaluating response safety
 \end{itemize}
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Domain-Specific Considerations}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Domain-Specific Considerations}
 
 \noindent\textbf{Discrete vs. Continuous Outputs:}
 \begin{itemize}[nosep]
@@ -2553,7 +2669,7 @@ Positive $\Delta \text{acc}$: training made behavior more linearly separable.
 \end{itemize}
 \end{samepage}
 
-\subsection{Universal Applicability}
+\subsubsection{Universal Applicability}
 
 DCAF applies to any neural network where:
 \begin{enumerate}[nosep]
@@ -2564,25 +2680,8 @@ DCAF applies to any neural network where:
 
 The methodology remains: identify components through opposing training pressures, validate through activation changes, characterize through geometric structure, confirm through ablation, and map connectivity through causal interventions.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Master formula placeholder — commented out pending landscape PDF generation
-% \newpage
-% \refstepcounter{part}
-% \addtocontents{toc}{\protect\contentsline{part}{\thepart\hspace{1em}The Master Formula}{\thepage}{}}
-% \includepdf[pages=1,landscape=true,pagecommand={\thispagestyle{empty}}]{dcaf_formula_page.pdf}
-% \begin{center}
-% \vspace*{3cm}
-% {\Large\textbf{[Master Formula Page]}}\\[1em]
-% {\normalsize The full DCAF pipeline visualization is provided as a separate landscape document.}
-% \vspace*{3cm}
-% \end{center}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\part{Reference}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 \section{Complete Notation Reference}
+\label{app:notation}
 
 \subsection{Core Objects}
 
@@ -2656,7 +2755,7 @@ $W_{i,\text{final}}$ & Final checkpoint: end of training run $t_i$ \\
 $m_{i,\tau}$ & Behavioral metric at evaluation step $\tau$ for signal $t_i$ \\
 $K$ & Peak confirmation window size (default: 3) \\
 $\delta$ & Peak stability tolerance (default: 0.05) \\
-$\textsc{Confirmed}(\tau)$ & Peak confirmation predicate \\
+$\texttt{Confirmed}(\tau)$ & Peak confirmation predicate \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -3078,11 +3177,8 @@ $\text{AUC}$ & Area under ROC curve \\
 \end{tabular}
 \end{center}
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\appendix
 \section{Implementation Considerations}
-\label{sec:implementation}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\label{app:implementation}
 
 \noindent\textbf{Baseline model selection ($\mathcal{M}_0$):}
 \begin{itemize}[nosep]
@@ -3127,7 +3223,7 @@ $\text{AUC}$ & Area under ROC curve \\
 \label{sec:domain-sketches}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-The following sections outline preliminary instantiation sketches for non-transformer architectures. These have not been validated experimentally and are provided as starting points for future work. The core DCAF methodology (Part~I) is architecture-agnostic; only the probe type instantiation, component decomposition, and activation capture points require domain-specific adaptation (see \S\ref{sec:extensibility} and the Domain-Specific Considerations section in Part~II).
+The following sections outline preliminary instantiation sketches for non-transformer architectures. These have not been validated experimentally and are provided as starting points for future work. The core DCAF methodology is architecture-agnostic; only the probe type instantiation, component decomposition, and activation capture points require domain-specific adaptation (see \S\ref{sec:extensibility} and Appendix~\ref{app:arch}).
 
 \subsection{Vision Models}
 
@@ -3193,5 +3289,55 @@ The following sections outline preliminary instantiation sketches for non-transf
 \item U-Net bottleneck representations
 \item Timestep embeddings
 \end{itemize}
+
+\section{Circuit Graph Output Format}
+\label{app:output-format}
+
+The following illustrates the JSON structure produced by DCAF's circuit graph reconstruction. Fields include discovery attribution (which paths found each component, path count, multi-path bonus), domain-level confidence scores ($C_W$, $C_A$, $C_G$), unified confidence (with bonus), adaptive tiered functional classification, bidirectionality status, edge weights, and pathway attribution.
+
+\begin{verbatim}
+{
+  "nodes": [
+    {"id": "L10_MLP", "confidence": 0.91,
+     "discovery": {
+       "paths": ["W", "A"], "path_count": 2, "bonus": 0.15
+     },
+     "domain_scores": {"C_W": 0.82, "C_A": 0.88, "C_G": 0.79},
+     "classification": {
+       "primary": [{"function": "recognition",
+                     "confidence": 0.95, "impact": 0.42}],
+       "auxiliary": [{"function": "steering",
+                      "confidence": 0.72, "impact": 0.30}],
+       "status": "Confirmed", "diffuse": false,
+       "tight_cluster": false,
+       "threshold_used": 0.8, "max_impact": 0.44
+     }, "bidirectional": true},
+    {"id": "L12H3", "confidence": 0.87,
+     "discovery": {
+       "paths": ["A"], "path_count": 1, "bonus": 0.0
+     },
+     "domain_scores": {"C_W": 0.35, "C_A": 0.91, "C_G": 0.85},
+     "classification": {
+       "primary": [{"function": "steering",
+                     "confidence": 1.0, "impact": 0.38}],
+       "auxiliary": [],
+       "status": "Confirmed", "diffuse": false,
+       "tight_cluster": true,
+       "threshold_used": 0.7, "max_impact": 0.38
+     }, "bidirectional": false}
+  ],
+  "edges": [
+    {"from": "L10_MLP", "to": "L12H3",
+     "weight": 0.85, "dcaf_validated": true,
+     "via": {"Q": 0.15, "K": 0.72, "V": 0.13}}
+  ]
+}
+\end{verbatim}
+
+Note L12H3 is a leverage point: discovered via Path 2 (activation) with low $C_W$ but high $C_A$---small weight changes, large activation impact. The pathway metadata shows L10\_MLP primarily affects L12H3 through the key pathway ($w_K = 0.72$), suggesting L10\_MLP writes information that L12H3 uses to determine \emph{where} to attend.
+
+\begin{remark}[Validation Status]
+This output format is illustrative. The schema shown here reflects the specification; the reference implementation's output format may differ in field naming or nesting as the implementation matures. Consult the implementation repository for the current schema.
+\end{remark}
 
 \end{document}
