@@ -30,6 +30,16 @@ import torch.nn as nn
 from dcaf.core.defaults import TAU_GRAD
 
 
+def _sequence_logprobs(logits: Tensor, labels: Tensor, mask: Tensor) -> Tensor:
+    """Compute length-normalized log-probabilities for a sequence."""
+    shift_logits = logits[:, :-1, :]
+    shift_labels = labels[:, 1:]
+    shift_mask = mask[:, 1:]
+    log_probs = torch.log_softmax(shift_logits, dim=-1)
+    token_logps = log_probs.gather(2, shift_labels.unsqueeze(2)).squeeze(2)
+    return (token_logps * shift_mask).sum(dim=-1) / shift_mask.sum(dim=-1).clamp(min=1)
+
+
 @dataclass
 class SignalObjective:
     """
@@ -245,11 +255,17 @@ def create_preference_objective(
         if margin_fn is not None:
             margin = margin_fn(model, batch)
         else:
-            # Default: assume batch contains chosen/rejected sequences
-            # This is a placeholder - actual implementation depends on model
-            raise NotImplementedError(
-                "Preference objective requires explicit margin_fn"
-            )
+            chosen_ids = batch["chosen_input_ids"].to(next(model.parameters()).device)
+            chosen_mask = batch["chosen_attention_mask"].to(next(model.parameters()).device)
+            rejected_ids = batch["rejected_input_ids"].to(next(model.parameters()).device)
+            rejected_mask = batch["rejected_attention_mask"].to(next(model.parameters()).device)
+
+            chosen_logits = model(input_ids=chosen_ids, attention_mask=chosen_mask).logits
+            rejected_logits = model(input_ids=rejected_ids, attention_mask=rejected_mask).logits
+
+            chosen_logps = _sequence_logprobs(chosen_logits, chosen_ids, chosen_mask)
+            rejected_logps = _sequence_logprobs(rejected_logits, rejected_ids, rejected_mask)
+            margin = (chosen_logps - rejected_logps).mean()
 
         return margin if negate else -margin
 

@@ -11,11 +11,14 @@ Usage:
 import gc
 import logging
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Set
+from typing import Dict, List, Any, Optional, Set, TYPE_CHECKING
 
 import torch
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from dcaf.domains.geometry.lrs import LRSResult
 
 
 def run_geometry_analysis(
@@ -167,8 +170,11 @@ def run_geometry_analysis(
     # Find primary target-side delta for state manager
     safety_delta_name = next(
         (d for d in available_deltas if "t1_prefopt_target" in d),
-        next((d for d in available_deltas if "target" in d),
+        next((d for d in available_deltas if "t2_sft_target" in d),
+             next((d for d in available_deltas
+                   if "target" in d and "anti" not in d and "negated" not in d),
              next((d for d in available_deltas if "safe" in d), available_deltas[0]))
+    )
     )
     safety_delta = delta_store.load_delta(safety_delta_name)
 
@@ -293,12 +299,12 @@ def run_geometry_analysis(
             # Predictivity via AUC (Def 6.11)
             labels = torch.cat([torch.ones(len(proj_plus)), torch.zeros(len(proj_minus))])
             scores = torch.cat([proj_plus, proj_minus])
+            pred_auc = 0.5
             try:
-                pred_auc = compute_auc(scores.cpu().numpy(), labels.cpu().numpy())
+                pred_auc = compute_auc(scores, labels)
                 pred_gain = max(0.0, pred_auc - 0.5) * 2  # Normalize: 0.5=chance, 1.0=perfect
             except Exception:
                 pred_gain = 0.0
-            pred_gain_norm = (1.0 + pred_gain) / 2.0
 
             lrs_result = compute_lrs(
                 coh_plus=coh_plus_val,
@@ -313,6 +319,8 @@ def run_geometry_analysis(
             # Generalization (Def 6.13) — split data for OOD estimate
             n_plus = len(proj_plus)
             n_minus = len(proj_minus)
+            auc_within = pred_auc
+            auc_ood = pred_auc
             if n_plus >= 4 and n_minus >= 4:
                 # Split into train/test for generalization estimate
                 half_p = n_plus // 2
@@ -322,8 +330,8 @@ def run_geometry_analysis(
                 test_scores = torch.cat([proj_plus[half_p:], proj_minus[half_m:]])
                 test_labels = torch.cat([torch.ones(n_plus - half_p), torch.zeros(n_minus - half_m)])
                 try:
-                    auc_within = compute_auc(train_scores.cpu().numpy(), train_labels.cpu().numpy())
-                    auc_ood = compute_auc(test_scores.cpu().numpy(), test_labels.cpu().numpy())
+                    auc_within = compute_auc(train_scores, train_labels)
+                    auc_ood = compute_auc(test_scores, test_labels)
                     gen_val = auc_ood / (auc_within + 1e-8)
                     gen_val = min(1.5, max(0.0, gen_val))
                 except Exception:
@@ -333,10 +341,10 @@ def run_geometry_analysis(
 
             gen_results[component] = GeneralizationResult(
                 gen=gen_val,
-                gap=max(0.0, pred_auc - (auc_ood if 'auc_ood' in dir() else pred_auc)),
-                mean_pred_within=pred_auc,
-                mean_pred_ood=auc_ood if 'auc_ood' in dir() else pred_auc,
-                ratios={},
+                gap=max(0.0, auc_within - auc_ood),
+                mean_pred_within=auc_within,
+                mean_pred_ood=auc_ood,
+                per_signal_ratio={},
             )
 
         except Exception as e:
@@ -383,6 +391,9 @@ def run_geometry_analysis(
         "passing_threshold": passing_count,
         "threshold": tau_G,
         "summary": summary,
+        "component_confidences": {
+            comp: result.C_G for comp, result in results.items()
+        },
         "top_components": [
             {
                 "component": comp,

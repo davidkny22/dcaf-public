@@ -1,0 +1,1137 @@
+\documentclass[11pt]{article}
+\usepackage[top=1in, bottom=1in, left=1in, right=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{multicol}
+\usepackage{pdflscape}
+\usepackage{natbib}
+\usepackage{graphicx}
+
+\hypersetup{
+    pdftitle={DCAF: Differential Circuit Analysis Framework},
+    pdfauthor={David Kogan},
+    pdfsubject={Mechanistic Interpretability, AI Safety, Neural Circuit Analysis},
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\newtheorem{definition}{Definition}[section]
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{remark}{Remark}[section]
+
+\title{\textbf{DCAF: Differential Circuit Analysis Framework}\\[0.5em]
+\large Integrating Multi-Signal Training Perturbations, Projection-Level Granularity,\\and Triangulated Confidence for Neural Circuit Discovery}
+\author{David Kogan\\
+\texttt{davidkny22@gmail.com}}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+Mechanistic interpretability has produced powerful methods for discovering neural circuits, yet existing approaches typically rely on a single attribution technique, lack calibrated confidence scores, and operate at head-level or edge-level granularity---missing the projection-level structure (e.g., $W_Q$, $W_K$, $W_V$, $W_O$) where behavioral signatures diverge within the same component. We introduce the Differential Circuit Analysis Framework (DCAF), which treats training signals as controlled perturbation experiments: by training a model under 11 paired behavioral objectives (5 target-reinforcing, 5 opposite-reinforcing, 1 neutral baseline) and triangulating evidence across weight deltas, activation patterns, and latent geometry, DCAF discovers candidate circuit components, maps their causal connections, and classifies their functional roles. Key technical contributions include: (i)~the 11-paired-objective probe configuration that uses preference optimization, supervised fine-tuning, gradient ascent, and sequential training as orthogonal discovery signals; (ii)~three complementary discovery paths (weight-based, activation-based, gradient-based) integrated through a triangulated confidence score; (iii)~the Direction Convergence Score (DCS), which measures cross-signal agreement on behavioral directions in the residual stream; and (iv)~a 7-phase ablation protocol with interaction discovery and adaptive tiered functional classification. The framework is formulated in an architecture-agnostic manner with a complete transformer instantiation. A reference implementation is publicly available at \url{https://github.com/davidkny22/dcaf-public}.
+\end{abstract}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction}
+\label{sec:introduction}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Neural networks implement behaviors through identifiable computational circuits---sparse subgraphs of model components that mediate specific input-output relationships. The field of mechanistic interpretability has made remarkable progress in discovering these circuits, from the manual reverse-engineering of the Indirect Object Identification (IOI) circuit in GPT-2 Small \citep{wang2023ioi}---26 attention heads organized into 7 functional classes---to automated methods such as ACDC \citep{conmy2023acdc}, Attribution Patching \citep{syed2024attribution}, and Anthropic's Circuit Tracing \citep{ameisen2025tracing}. The foundational vocabulary of residual streams, virtual weights, and QK/OV projection-level decomposition was established by \citet{elhage2021mathematical}, and the broader circuits hypothesis articulated by \citet{olah2020zoom}.
+
+Despite this progress, several limitations constrain current circuit discovery methodology. First, single-method circuit discovery exhibits high estimator variance: \citet{meloux2025variance} demonstrate that EAP-IG circuit attributions have substantial variance under bootstrap resampling, undermining replicability. Second, the field has identified ``interpretability illusions'' arising from single-method conclusions and has explicitly called for cross-method validation \citep{sharkey2025openproblems}. Third, existing automated methods operate above the projection level---ACDC at head/edge granularity, CD-T at head-plus-position granularity \citep{hsu2025cdt}---despite \citeauthor{elhage2021mathematical}'s (\citeyear{elhage2021mathematical}) foundational framework already defining projection-level structure. Fourth, activation patching results vary dramatically with hyperparameter choices \citep{zhang2024bestpractices}, revealing methodological fragility. Fifth, no published framework uses paired training perturbations as primary discovery probes, despite growing evidence that training dynamics reveal circuit structure: \citet{prakash2024finetuning} show that fine-tuning enhances existing mechanisms, and \citet{tigges2024consistent} demonstrate that circuit analyses are consistent across training and scale.
+
+We introduce the Differential Circuit Analysis Framework (DCAF), which addresses these limitations through an integrative approach. DCAF synthesizes projection-level analysis \citep{elhage2021mathematical}, training-as-probe methodology \citep{prakash2024finetuning,tigges2024consistent}, the triangulation principle advocated by \citet{long2025triangulation} and \citet{sharkey2025openproblems}, and multi-method validation strategies emerging from the BlackboxNLP 2025 shared task \citep{mondorf2025ensemble} into a unified, formally specified protocol. Rather than introducing a single new technique, DCAF provides a complete pipeline that integrates independently established threads into a coherent framework with novel operational instruments: the 11-paired-objective probe configuration, the Direction Convergence Score (DCS), the 7-phase ablation protocol with interaction discovery, and adaptive tiered functional classification. These specific instruments have no direct named precedents in the literature.
+
+The key contributions of this work are:
+\begin{enumerate}[nosep]
+\item \textbf{Multi-signal training perturbation protocol.} We systematize the insights of \citet{prakash2024finetuning} and \citet{tigges2024consistent} into a complete 11-signal configuration that uses preference optimization, supervised fine-tuning, gradient ascent, and sequential training as orthogonal discovery probes, extending contrastive methods \citep{panickssery2024caa,arditi2024refusal} from inference-time prompt contrasts to training-time signal contrasts.
+
+\item \textbf{Triangulated confidence scoring.} We implement the triangulation principle called for by \citet{long2025triangulation} and \citet{sharkey2025openproblems} through a specific operationalization across weight, activation, and geometric domains, producing calibrated confidence scores that reflect convergent evidence.
+
+\item \textbf{Projection-level discovery at scale.} We operationalize at scale the QK/OV decomposition introduced by \citet{elhage2021mathematical}, extending it to gated MLP architectures and integrating it into an automated discovery pipeline alongside parameter-space methods such as APD \citep{braun2025apd}.
+
+\item \textbf{Ablation protocol with interaction discovery.} We specify a 7-phase ablation methodology that efficiently discovers individual, pairwise, and triple component interactions through seven parallel search strategies, producing functional classifications and interaction-enriched circuit graphs.
+
+\item \textbf{Architecture-agnostic formulation.} The core methodology---perturbation experiments, multi-domain evidence, triangulated confidence---is defined independently of model architecture, with a complete transformer instantiation and preliminary sketches for vision and reinforcement learning systems.
+\end{enumerate}
+
+A reference implementation of DCAF is publicly available at \url{https://github.com/davidkny22/dcaf-public}. The implementation covers the core mathematical framework, multi-path discovery, domain analysis modules (weight, activation, geometry), training diagnostics, confidence scoring, the 7-phase ablation protocol, circuit graph reconstruction, and CLI tooling for transformer architectures. Features currently under development include direction synthesis (global residual stream directions and DCS computation), MIB benchmark compatibility, and vision/diffusion model instantiation.
+
+The remainder of this paper is organized as follows. Section~\ref{sec:related} surveys related work. Section~\ref{sec:overview} provides a framework overview. Sections~\ref{sec:discovery}--\ref{sec:ablation} present the technical methodology in detail. Section~\ref{sec:experiments} is reserved for empirical validation. Section~\ref{sec:limitations} discusses limitations, and Section~\ref{sec:conclusion} concludes.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Related Work}
+\label{sec:related}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+DCAF builds on and extends a rich body of work in mechanistic interpretability, representation engineering, and AI safety. We organize prior art into seven areas and position DCAF relative to each.
+
+\subsection{Circuit Discovery Methods}
+
+\textbf{Manual circuit analysis.} \citet{wang2023ioi} reverse-engineered the IOI circuit in GPT-2 Small, identifying 26 attention heads in 7 functional classes through causal intervention. \citet{hanna2023greaterthan} similarly dissected the greater-than circuit, and \citet{heimersheim2023docstring} analyzed a Python docstring circuit in a 4-layer model. These studies demonstrated that transformer behaviors are implemented by identifiable circuits but required extensive manual effort.
+
+\textbf{Automated discovery.} \citet{conmy2023acdc} introduced Automated Circuit DisCovery (ACDC), which scores edge importance via activation patching and prunes below a threshold, operating at head/MLP granularity. \citet{syed2024attribution} showed that Attribution Patching (EAP)---a linear approximation requiring only two forward passes and one backward pass---outperforms ACDC in edge recovery. \citet{goldowsky2023path} formalized path patching, the method ACDC automates. \citet{hsu2025cdt} achieved 97\% ROC AUC with Contextual Decomposition for Transformers (CD-T), reducing circuit discovery runtime from hours to seconds. \citet{li2024optimal} provided theoretical bounds for optimal ablation, producing smaller and more faithful circuits. \citet{edin2025gim} introduced Gradient Interaction Modifications (GIM), a gradient-based method achieving high accuracy on the Mechanistic Interpretability Benchmark \citep{mueller2025mib}. \citet{hadad2026formal} adapted neural network verification to circuit discovery with provable guarantees.
+
+\textbf{Production-scale methods.} Anthropic's Circuit Tracing \citep{ameisen2025tracing,lindsey2025biology} introduced cross-layer transcoders and attribution graphs applied to Claude 3.5 Haiku. \citet{lieberum2023chinchilla} demonstrated circuit analysis at 70B scale.
+
+DCAF complements these approaches by operating at the projection level within components (e.g., $W_Q$, $W_K$, $W_V$, $W_O$) rather than at the head/edge level, and by using multiple independent training perturbations as discovery probes rather than a single attribution method. DCAF's ablation protocol could integrate the theoretically grounded ablation techniques of \citet{li2024optimal}.
+
+\subsection{Representation Engineering and Steering Vectors}
+
+\citet{zou2023repe} introduced Representation Engineering (RepE), examining population-level representations to monitor cognitive phenomena. \citet{arditi2024refusal} identified a single 1D subspace mediating refusal across 13 models up to 72B parameters. \citet{li2023iti} used linear probes for Inference-Time Intervention on truthfulness. \citet{marks2024geometry} established causal links between truth representations and outputs through the Geometry of Truth. \citet{tigges2023sentiment} identified sentiment as a single linear dimension concentrating at syntactically neutral positions. \citet{turner2023actadd} proposed activation addition (ActAdd) for inference-time steering. \citet{panickssery2024caa} systematized contrastive activation addition with paired positive/negative behavioral examples for Llama~2. \citet{park2024linear} formalized the Linear Representation Hypothesis. \citet{zhang2024bestpractices} demonstrated that activation patching results vary substantially with hyperparameter choices.
+
+DCAF extends contrastive methods from inference-time prompt contrasts to training-time signal contrasts and requires convergence across multiple independent extraction methods. Where existing approaches extract directions from a single contrast pair, DCAF validates directions through cross-signal convergence: if multiple training signals independently produce directions that agree (as measured by DCS), the direction is robust to methodology choice.
+
+\subsection{Training Dynamics as an Interpretability Lens}
+
+This cluster represents the closest prior art to DCAF's training-perturbation methodology. \citet{nanda2023grokking} provided the earliest example of using training trajectories to expose circuit formation via progress measures for grokking. \citet{prakash2024finetuning} introduced Cross-Model Activation Patching (CMAP) and showed that fine-tuning enhances existing mechanisms---the most direct precedent for training-as-discovery. \citet{tigges2024consistent} demonstrated that LLM circuit analyses are consistent across training and scale, providing evidence that training dynamics are a reliable lens. \citet{wang2025finetuning} tracked edge changes across fine-tuning checkpoints. \citet{singh2024induction} used optogenetics-inspired causal interventions throughout training to study induction head formation.
+
+DCAF systematizes these insights into a complete multi-signal protocol, using 11 paired training objectives as orthogonal probes. Where prior work uses training dynamics as a post-hoc analytical lens, DCAF treats each training signal as a controlled perturbation experiment whose weight deltas, activation changes, and geometric effects are triangulated into confidence scores.
+
+\subsection{Weight-Space and Parameter-Level Analysis}
+
+\citet{elhage2021mathematical} defined the QK and OV decomposition of attention heads---already operating at projection level---as the foundational analytical framework. \citet{braun2025apd} introduced Attribution-based Parameter Decomposition (APD), the most explicit ``weights-not-activations'' circuit method, operating directly across all projection matrices. \citet{gao2025weightsparse} trained models with $L_0$-sparse weights to produce intrinsic projection-level circuits. \citet{dooms2024bilinear} enabled weight-based mechanistic interpretability through bilinear MLPs. \citet{golimblevskaia2025circuitinsights} introduced WeightLens and CircuitLens for interpreting features directly from learned weights.
+
+DCAF does not claim to have invented projection-level analysis. Rather, it operationalizes at scale the QK/OV decomposition introduced by \citet{elhage2021mathematical}, extending it to gated MLP architectures ($W_{\text{gate}}$, $W_{\text{up}}$, $W_{\text{down}}$) and integrating it into an automated discovery pipeline. The framework's two-level hierarchy---projections as analysis units, components as graph nodes---allows sub-component weight analysis while maintaining compatibility with component-level activation and geometric methods.
+
+\subsection{Sparse Autoencoders and Feature Discovery}
+
+\citet{cunningham2024sae} and \citet{bricken2023monosemanticity} concurrently established sparse autoencoders (SAEs) as decomposition tools for language model activations. \citet{gao2024scaling} scaled SAEs to GPT-4 with 16M latents. \citet{lieberum2024gemma} released Gemma Scope, providing open-source SAEs across all layers of Gemma~2. \citet{marks2025sparse} extended SAEs to Sparse Feature Circuits, discovering causal subgraphs of interpretable features. \citet{templeton2024scaling} scaled monosemanticity to Claude~3 Sonnet. \citet{he2024dictionary} used dictionary learning as an alternative to activation patching for circuit discovery.
+
+DCAF is complementary to SAE-based methods. SAEs decompose activations into interpretable features; DCAF identifies which components are behaviorally relevant through training perturbations. SAE features could serve as activation probes within DCAF's framework, and DCAF's weight-delta analysis operates orthogonally to SAE-based feature flow analysis.
+
+\subsection{Safety Circuit Protection}
+
+\citet{zou2024circuitbreakers} proposed Circuit Breakers for identifying and breaking representational pathways for undesirable behaviors. \citet{han2025fgsn} identified safety neurons and proposed Safety Neuron Tuning, finding that edits to a sparse subset of safety neurons (often $<$5\%, dropping to $<$1\% for incremental safety dimensions) can reduce fine-tuning risks. \citet{huang2025booster} introduced BOOSTER for defense against adversarial fine-tuning using safety-specific neuron detection. \citet{zhu2025safetylock} developed SafetyLock, extracting safety-bias directions and re-injecting them post-fine-tuning. \citet{wei2024brittleness} localized safety to $\sim$3\% of parameters via pruning and low-rank modifications. \citet{qi2024finetuning} established the foundational threat model showing that fine-tuning compromises safety. \citet{lermen2023lora} demonstrated that LoRA fine-tuning efficiently undoes safety training.
+
+DCAF provides the upstream discovery methodology that these protection methods require: identifying which projection matrices implement safety behaviors, at what confidence, and through which functional roles. The framework's opposition testing ($\mathcal{T}^+$/$\mathcal{T}^-$) directly reveals bidirectional control points---components where the same weights mediate both safe and unsafe behavior.
+
+\subsection{Methodological Foundations}
+
+\citet{long2025triangulation} formalized triangulation as an acceptance rule for mechanistic interpretability, explicitly advocating for multi-method validation. \citet{meloux2025variance} reframed circuit discovery as a high-variance statistical estimation problem, recommending bootstrap-based uncertainty quantification. \citet{mondorf2025ensemble} explored ensemble strategies for circuit localization at BlackboxNLP 2025, finding that combining methods improves performance. \citet{geiger2021causal} developed causal abstractions of neural networks, and \citet{geiger2025causal} unified activation patching, path patching, causal scrubbing, and distributed alignment search under a single theoretical framework. \citet{belinkov2022probing} provided a comprehensive analysis of probing classifiers, and \citet{hewitt2019structural} introduced the structural probe for syntax. \citet{meng2022rome} localized factual recall to mid-layer MLPs. \citet{rafailov2023dpo} introduced Direct Preference Optimization, one of the training objectives DCAF uses as a discovery signal.
+
+DCAF implements the triangulation principle through a specific operationalization: weight deltas capture what optimization modified, activation changes capture representational reorganization, and latent geometry captures behavioral direction structure. The DCS metric provides a concrete measure of the cross-signal convergence that \citet{sharkey2025openproblems} call for and \citet{meloux2025variance} demonstrate is needed.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Framework Overview}
+\label{sec:overview}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+This section provides a high-level overview of the DCAF pipeline. Full technical details for each stage appear in Sections~\ref{sec:discovery}--\ref{sec:ablation}.
+
+\subsection{Operating Principle}
+
+DCAF treats each training signal as a controlled perturbation experiment. By analyzing what changes---in weights, activations, and latent geometry---when a model is trained under different behavioral pressures, it \textit{discovers} candidate components, \textit{maps} their causal connections, and \textit{characterizes} their functional roles. Multiple independent signals and measurement domains provide both comprehensive characterization and confidence through convergence.
+
+\begin{definition}[Configurable Baseline Model]
+\label{def:baseline-model}
+Let $\mathcal{M}_0$ be the baseline model with parameters $W_0 \in \mathbb{R}^d$ and components $\mathcal{K} = \{k_1, \ldots, k_m\}$. The baseline is chosen from two options based on the behavioral domain under study:
+
+\textbf{Option A:} $\mathcal{M}_0 = \mathcal{M}_{\text{pre}}$ (the pretrained model directly). Appropriate when the target behavior's training data does not carry instruction-following signal.
+
+\textbf{Option B (recommended for safety research):} $\mathcal{M}_0 = \text{IT}(\mathcal{M}_{\text{pre}}, \mathcal{D}_{\text{IT}})$---the pretrained model after instruction tuning on a behaviorally neutral dataset $\mathcal{D}_{\text{IT}}$. Recommended for any behavioral domain whose datasets inherently depend on instruction-following format.
+
+All weight deltas $\Delta W$, activation baselines $A_0$, and ablation baseline restorations are relative to whichever $\mathcal{M}_0$ is selected.
+\end{definition}
+
+\begin{remark}[Rationale for Option B]
+Safety datasets teach two things simultaneously: (1) how to follow instructions and (2) the target safety behavior. If $\mathcal{M}_0$ is the pretrained model, every $\Delta W$ conflates ``learned to follow instructions'' with ``learned the target behavior,'' causing DCAF to misidentify instruction-following circuits as safety circuits. Instruction-tuning first on a behaviorally neutral dataset means $\mathcal{M}_0$ already knows how to follow instructions, so behavioral training produces deltas isolating only the behavioral component.
+\end{remark}
+
+\begin{definition}[Granularity Architecture]
+\label{def:granularity}
+DCAF employs a two-level hierarchy:
+
+\textbf{Analysis unit---Projection:} A single weight matrix within a model component. For attention components, the projections are $W_Q, W_K, W_V, W_O$ (per head). For MLP components, the projections are $W_{\text{gate}}, W_{\text{up}}, W_{\text{down}}$ (per layer). Let $\mathcal{P}$ denote the set of all projections.
+
+\textbf{Graph node---Component:} The functional unit for circuit graphs, ablation, and cross-domain confidence. Attention components are individual heads; MLP components are full MLP layers. These coincide with $\mathcal{K} = \{k_1, \ldots, k_m\}$.
+
+\textbf{Projection-to-Component mapping:} $\mu_{\text{proj}}: \mathcal{P} \to \mathcal{K}$ maps each projection to its containing component.
+\end{definition}
+
+\begin{remark}[Why Two Levels]
+Sub-component granularity is necessary because projections within the same component may show completely different behavioral signatures---$W_Q$ and $W_V$ within the same head may respond to entirely different training signals. Activation and geometry domains operate at component level because activations flow through the residual stream at head/MLP output granularity. This operationalizes at scale the QK/OV decomposition of \citet{elhage2021mathematical}, extending it to gated MLP architectures.
+\end{remark}
+
+\subsection{Training Signals}
+
+\begin{definition}[Training Signal Structure]
+Let $\mathcal{T} = \{t_1, \ldots, t_N\}$ be training transformations partitioned into:
+\begin{align}
+\mathcal{T}^+ &= \{t : t \text{ reinforces target behavior}\} \\
+\mathcal{T}^- &= \{t : t \text{ reinforces opposite behavior}\} \\
+\mathcal{T}^0 &= \{t : t \text{ is behaviorally neutral baseline}\}
+\end{align}
+The $\mathcal{T}^+/\mathcal{T}^-$ structure extends contrastive methods \citep{panickssery2024caa,arditi2024refusal} from inference-time prompt contrasts to training-time signal contrasts, testing whether components show opposing responses to opposing training pressures.
+\end{definition}
+
+\begin{definition}[Canonical 11-Signal Instantiation]
+\label{def:canonical-signals}
+The 11 canonical signals, where $a \succ b$ denotes preference (chosen $= a$, rejected $= b$):
+
+\textbf{Target Behavior Cluster $\mathcal{T}^+$:}
+\begin{align*}
+t_1 &= \text{PrefOpt}(\text{target} \succ \text{opposite}) & &\text{(preference optimization, e.g., SimPO, DPO)} \\
+t_2 &= \text{SFT}(\text{target}) & &\text{(supervised fine-tuning)} \\
+t_3 &= \text{Cumulative}(\text{target}) & &\text{(SFT then PrefOpt sequentially)} \\
+t_4 &= \text{Anti}(\text{opposite} \succ \text{target}) & &\text{(gradient ascent on preference margin from base)} \\
+t_5 &= \text{Negated}^{(-)}(\text{opposite} \succ \text{target}) & &\text{(gradient ascent from opposite-checkpoint)}
+\end{align*}
+
+\textbf{Opposite Behavior Cluster $\mathcal{T}^-$:}
+\begin{align*}
+t_6 &= \text{PrefOpt}(\text{opposite} \succ \text{target}), \quad t_7 = \text{SFT}(\text{opposite}), \quad t_8 = \text{Cumulative}(\text{opposite}) \\
+t_9 &= \text{Anti}(\text{target} \succ \text{opposite}), \quad t_{10} = \text{Negated}^{(+)}(\text{target} \succ \text{opposite})
+\end{align*}
+
+\textbf{Neutral Baseline $\mathcal{T}^0$:} $t_{11} = \text{DomainNative}(\text{neutral})$
+\end{definition}
+
+\begin{remark}[Minimal Signal Set]
+The full 11-signal protocol maximizes discovery coverage and opposition measurement rigor. For computational efficiency, a minimal 3-signal subset---$t_1$ (PrefOpt target), $t_6$ (PrefOpt opposite), $t_{11}$ (neutral)---captures the core $\mathcal{T}^+$/$\mathcal{T}^-$/$\mathcal{T}^0$ structure. Expand to the full set when computational budget allows.
+\end{remark}
+
+\subsection{Pipeline Summary}
+
+The complete DCAF pipeline proceeds as follows:
+\begin{equation}
+\mathcal{M}_0 \xrightarrow{\mathcal{T}} \begin{Bmatrix} \Delta W \to \mathcal{H}_W \\ \Delta A \to \mathcal{H}_A \\ \nabla \mathcal{L} \to \mathcal{H}_G \end{Bmatrix} \xrightarrow{\cup} \mathcal{H}_{\text{disc}} \xrightarrow{C_W, C_A, C_G} \mathcal{H}_{\text{cand}} \xrightarrow{\text{ablation}} \mathcal{H}_{\text{conf}} \to G, \text{class}(k)
+\end{equation}
+
+\noindent Concretely:
+\begin{enumerate}[nosep]
+\setcounter{enumi}{-1}
+\item \textbf{Baseline selection:} Choose $\mathcal{M}_0$ (Section~\ref{sec:overview}).
+\item \textbf{Signal training:} Run all training signals from $\mathcal{M}_0$ with periodic checkpoint evaluation.
+\item \textbf{Peak checkpoint selection:} For each signal, identify the confirmed peak checkpoint $W_{i,\text{peak}}$ using stability-confirmed maximum behavioral metrics (Section~\ref{sec:discovery}).
+\item \textbf{Weight delta computation:} Compute $\Delta W_i = W_{i,\text{peak}} - W_0$ for all signals.
+\item \textbf{Signal effectiveness:} Compute $\text{eff}(i)$ from baseline to peak-checkpoint metrics.
+\item \textbf{Multi-path discovery:} Weight $\to \mathcal{H}_W$, Activation $\to \mathcal{H}_A$, Gradient $\to \mathcal{H}_G$ (Section~\ref{sec:discovery}).
+\item \textbf{Domain analysis:} Weight, activation, and geometry analysis (Sections~\ref{sec:weight}--\ref{sec:geometry}).
+\item \textbf{Training diagnostics:} Activation delta alignment, optional curvature tracking (Section~\ref{sec:training-diag}).
+\item \textbf{Unified confidence:} Triangulated scoring with multi-path bonus (Section~\ref{sec:confidence}).
+\item \textbf{Circuit graph reconstruction:} Edge discovery via 5 methods (Section~\ref{sec:graph}).
+\item \textbf{Steering vector optimization:} Bidirectional steering and validation (Section~\ref{sec:steering}).
+\item \textbf{Ablation and functional classification:} 7-phase protocol (Section~\ref{sec:ablation}).
+\end{enumerate}
+
+\paragraph{Notation.} Table~\ref{tab:notation} provides a compact reference for the most important symbols. A full notation reference appears in Appendix~\ref{app:notation}.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+$\mathcal{M}_0$ & Configured baseline model \\
+$\mathcal{K}$, $k$ & Set of components; single component \\
+$\mathcal{P}$, $\text{proj}$ & Set of projections; single projection matrix \\
+$\mu_{\text{proj}}: \mathcal{P} \to \mathcal{K}$ & Projection-to-component mapping \\
+$\mathcal{T}^+, \mathcal{T}^-, \mathcal{T}^0$ & Target, opposite, and neutral signal clusters \\
+$\Delta W_i^{(\text{proj})}$ & Weight delta: $W_{i,\text{peak}}^{(\text{proj})} - W_0^{(\text{proj})}$ \\
+$\text{eff}(i)$ & Signal effectiveness score $\in [0,1]$ \\
+$\mathcal{H}_W, \mathcal{H}_A, \mathcal{H}_G$ & Weight-, activation-, gradient-discovered sets \\
+$\mathcal{H}_{\text{disc}}, \mathcal{H}_{\text{cand}}, \mathcal{H}_{\text{conf}}$ & Discovered, candidate, confirmed component sets \\
+$C_W^{(k)}, C_A^{(k)}, C_G^{(k)}$ & Weight, activation, geometric confidence \\
+$C^{(k)}$ & Unified confidence \\
+$\text{DCS}(L)$ & Direction Convergence Score at layer $L$ \\
+$G = (V, E)$ & Behavioral circuit graph \\
+\bottomrule
+\end{tabular}
+\caption{Key notation. Full reference in Appendix~\ref{app:notation}.}
+\label{tab:notation}
+\end{table}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Multi-Path Discovery}
+\label{sec:discovery}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+DCAF employs three complementary discovery paths. Each path identifies candidate projections using different evidence, which are then mapped to components via $\mu_{\text{proj}}$. All discovered components then receive confidence scores from all three measurement domains.
+
+\subsection{Peak Checkpoint Selection}
+
+Training runs do not always improve monotonically. A signal may achieve its strongest behavioral effect mid-training before degrading.
+
+\begin{definition}[Peak Checkpoint]
+\label{def:peak-checkpoint}
+For training signal $t_i$, let $\{W_{i,\tau}\}_{\tau=1}^{T}$ be the sequence of checkpoints. The peak checkpoint $W_{i,\text{peak}}$ is the checkpoint at which the signal-specific behavioral metric $m_{i,\tau}$ achieves its confirmed maximum:
+\begin{equation}
+W_{i,\text{peak}} = W_{i,\tau^*}, \qquad \tau^* = \arg\max_\tau\; m_{i,\tau} \quad \text{subject to Confirmed}(\tau)
+\end{equation}
+where confirmation prevents selecting transient spikes:
+\begin{equation}
+\text{Confirmed}(\tau) = \bigl(m_{i,\tau} = \max_{\tau' \leq \tau} m_{i,\tau'}\bigr) \;\wedge\; \left(\frac{1}{K}\sum_{j=1}^{K} m_{i,\tau+j} \geq m_{i,\tau} - \delta \cdot m_{i,\tau}\right)
+\end{equation}
+with confirmation window $K=3$ and stability tolerance $\delta = 0.05$.
+\end{definition}
+
+\begin{definition}[Weight Delta]
+\begin{equation}
+\Delta W_i^{(\text{proj})} = W_{i,\text{peak}}^{(\text{proj})} - W_0^{(\text{proj})}
+\end{equation}
+Each delta is a full matrix of the same shape as the projection weight matrix.
+\end{definition}
+
+\subsection{Significance Predicates}
+
+\begin{definition}[Percentile Threshold]
+\begin{equation}
+\Phi_k(\{\|\Delta W^{(\text{proj})}_i\|_{\text{RMS}}\}_{\text{proj} \in \mathcal{P}}) = \inf\left\{\theta : \frac{|\{\text{proj} : \|\Delta W^{(\text{proj})}_i\|_{\text{RMS}} \leq \theta\}|}{|\mathcal{P}|} \geq \frac{k}{100}\right\}
+\end{equation}
+\end{definition}
+
+\begin{definition}[Significance Predicates]
+\begin{align}
+\text{sig}(\text{proj}, i) &= \mathbf{1}\left[\|\Delta W^{(\text{proj})}_i\|_{\text{RMS}} \geq \Phi_{\tau_{\text{sig}}}(\cdot)\right] \\
+\overline{\text{sig}}(\text{proj}, i) &= \mathbf{1}\left[\|\Delta W^{(\text{proj})}_i\|_{\text{RMS}} < \Phi_{\tau_{\text{base}}}(\cdot)\right]
+\end{align}
+with $\tau_{\text{sig}} = 85$ (top 15\% of delta norms) and $\tau_{\text{base}} = 50$ (median).
+\end{definition}
+
+\subsection{Path 1: Weight-Based Discovery ($\mathcal{H}_W$)}
+
+Weight-based discovery identifies projections that changed substantially during behavioral training---the most direct evidence of optimization pressure.
+
+\begin{definition}[Signal Effectiveness]
+\label{def:signal-effectiveness}
+\begin{equation}
+\text{eff}(i) = \text{normalize}_{[0,1]}\left(\Delta_{\text{improve}}(i) + \beta \cdot \text{threshold}(i)\right)
+\end{equation}
+where $\Delta_{\text{improve}}$ is the normalized improvement metric (loss reduction for SFT, margin improvement for preference methods, reward improvement for RL), $\text{threshold}(i)$ is a binary bonus for crossing a behavioral threshold, and $\beta = 0.4$.
+\end{definition}
+
+\begin{definition}[Aggregated Cluster Deltas]
+\label{def:cluster-deltas}
+\begin{equation}
+\bar{\delta}^{(\text{proj})}_+ = \frac{\sum_{i \in \mathcal{T}^+} \text{eff}(i) \cdot \Delta W^{(\text{proj})}_i}{\sum_{i \in \mathcal{T}^+} \text{eff}(i)}, \quad \bar{\delta}^{(\text{proj})}_- = \frac{\sum_{j \in \mathcal{T}^-} \text{eff}(j) \cdot \Delta W^{(\text{proj})}_j}{\sum_{j \in \mathcal{T}^-} \text{eff}(j)}
+\end{equation}
+\end{definition}
+
+\begin{definition}[Opposition Degree]
+\label{def:opposition-degree}
+\begin{equation}
+\text{cos\_opp}^{(\text{proj})} = \cos\!\left(\text{flatten}(\bar{\delta}^{(\text{proj})}_+),\; \text{flatten}(\bar{\delta}^{(\text{proj})}_-)\right)
+\end{equation}
+\begin{equation}
+\text{opp\_degree}(\text{proj}) = \max\!\left(0,\; -\text{cos\_opp}^{(\text{proj})}\right)
+\end{equation}
+When $\mathcal{T}^+$ and $\mathcal{T}^-$ push the projection in opposite directions, $\text{opp\_degree} \approx 1$. Cosine similarity is self-normalizing, requiring no layer-specific calibration.
+\end{definition}
+
+\begin{definition}[Weight-Based Discovery Score]
+\begin{equation}
+S^{(\text{proj})}_W = \min\left(1,\, \frac{\sum_{i \in \mathcal{T} \setminus \mathcal{T}^0} \text{eff}(i)^q \cdot \text{sig}(\text{proj}, i)}{\sum_{i \in \mathcal{T} \setminus \mathcal{T}^0} \text{eff}(i)^q} + \alpha \cdot \text{opp\_degree}(\text{proj})\right) \cdot \mathbf{1}\left[\forall t \in \mathcal{T}^0: \overline{\text{sig}}(\text{proj}, t)\right]
+\end{equation}
+with $q=2$ (effectiveness power) and $\alpha=0.2$ (opposition bonus weight). The baseline filter excludes projections responding to neutral training.
+\end{definition}
+
+\begin{definition}[Weight-Based Discovery Set]
+\begin{equation}
+\mathcal{H}_W = \{\text{proj} \in \mathcal{P} : S^{(\text{proj})}_W \geq \tau_W\}
+\end{equation}
+where $\tau_W$ is the weight discovery threshold (default: 0.3).
+\end{definition}
+
+\subsection{Path 2: Activation-Based Discovery ($\mathcal{H}_A$)}
+
+Activation-based discovery identifies \textbf{leverage points}: projections where small weight changes produce large representational effects, missed by weight-based discovery.
+
+\begin{definition}[Component Activation Magnitude]
+\begin{equation}
+m^{(k)}_{\text{agg}} = \frac{1}{|\mathcal{T}|} \sum_{i \in \mathcal{T}} \frac{1}{|\Pi|} \sum_{\pi \in \Pi} m^{(k,\pi)}_i
+\end{equation}
+where $\Pi = \{\pi_{\text{detect}}, \pi_{\text{decide}}, \pi_{\text{eval}}\}$ are probe types capturing behavioral processing at different stages.
+\end{definition}
+
+\begin{definition}[Two-Stage Discovery]
+Flag components with notable activation changes using a generous threshold ($\tau_{\text{comp}} = 70$th percentile), then filter projections within flagged components using a strict threshold ($\tau_{\text{act}} = 85$th percentile):
+\begin{equation}
+\mathcal{H}_A = \left\{\text{proj} \in \mathcal{P} : \mu_{\text{proj}}(\text{proj}) \in \mathcal{K}_{\text{flagged}} \land S^{(\text{proj})}_A \geq \Phi_{\tau_{\text{act}}}(\cdot)\right\}
+\end{equation}
+\end{definition}
+
+\subsection{Path 3: Gradient-Based Discovery ($\mathcal{H}_G$)}
+
+Gradient-based discovery identifies projections with high behavioral gradients: projections that \emph{would} affect behavior if modified, regardless of whether training actually changed them.
+
+\begin{definition}[Behavioral Gradient]
+\begin{equation}
+g^{(\text{proj})} = \sum_{i \in \mathcal{T}^+ \cup \mathcal{T}^-} \text{eff}(i) \cdot \left\|\frac{\partial \mathcal{O}_i}{\partial W^{(\text{proj})}}\right\|_F
+\end{equation}
+\end{definition}
+
+\begin{definition}[Gradient-Based Discovery Set]
+\begin{equation}
+\mathcal{H}_G = \left\{\text{proj} \in \mathcal{P} : g^{(\text{proj})} \geq \Phi_{\tau_{\text{grad}}}(\cdot)\right\}
+\end{equation}
+with $\tau_{\text{grad}} = 85$.
+\end{definition}
+
+\subsection{Discovery Integration}
+
+\begin{definition}[Unified Discovery Set]
+\begin{equation}
+\mathcal{H}_{\text{disc}} = \text{components}(\mathcal{H}_W) \cup \text{components}(\mathcal{H}_A) \cup \text{components}(\mathcal{H}_G)
+\end{equation}
+Discovery is inclusive: a component flagged by \emph{any} path becomes a candidate for confidence scoring and ablation validation. The three paths are deliberately independent, so multi-path discovery ($\text{paths}(k) \geq 2$) indicates converging evidence from independent methods.
+\end{definition}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Domain Analysis}
+\label{sec:weight}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+All discovered components ($\mathcal{H}_{\text{disc}}$) receive confidence scores from three measurement domains, regardless of which path discovered them.
+
+\subsection{Weight Analysis}
+
+Weight analysis operates at projection level. Full methodology details including RMS normalization, SVD diagnostics, and signal effectiveness formulas appear in the definitions above and in Appendix~\ref{app:implementation}.
+
+\begin{definition}[RMS-Normalized Frobenius Norm]
+\begin{equation}
+\|\Delta W_i^{(\text{proj})}\|_{\text{RMS}} = \frac{\|\Delta W_i^{(\text{proj})}\|_F}{\sqrt{m \cdot n}}
+\end{equation}
+where $(m, n)$ is the projection matrix shape. Dividing by $\sqrt{m \cdot n}$ eliminates dimensional bias---an MLP gate projection ($2304 \times 9216$) would otherwise produce $\sim$6$\times$ larger norms than an attention Q projection ($2304 \times 256$) for identical per-element changes.
+\end{definition}
+
+\begin{definition}[Weight Confidence $C_W$]
+\begin{equation}
+C^{(\text{proj})}_W = \min\left(1,\, \frac{\sum_{i \in \mathcal{T} \setminus \mathcal{T}^0} \text{eff}(i)^q \cdot \text{sig}(\text{proj}, i)}{\sum_{i \in \mathcal{T} \setminus \mathcal{T}^0} \text{eff}(i)^q} + \alpha \cdot \text{opp\_degree}(\text{proj})\right) \cdot \mathbf{1}\left[\forall t \in \mathcal{T}^0: \overline{\text{sig}}(\text{proj}, t)\right]
+\end{equation}
+Component-level: $C^{(k)}_W = \max_{\text{proj} \in \mu_{\text{proj}}^{-1}(k)} C^{(\text{proj})}_W$.
+\end{definition}
+
+\subsubsection{SVD Diagnostics on Projection Deltas}
+
+\begin{definition}[SVD Diagnostics]
+Compute the SVD of aggregated cluster delta matrices. Two derived metrics characterize the structure of weight changes:
+
+\textbf{Rank-1 fraction:} $\text{rank1}(\text{proj}) = \sigma_1^2 / \sum_i \sigma_i^2$---how concentrated the weight change is along a single input-to-output mapping.
+
+\textbf{Spectral opposition:} $\text{spec\_opp}(\text{proj}) = -\cos(V_{h,+}[0], V_{h,-}[0])$---whether $\mathcal{T}^+$ and $\mathcal{T}^-$ oppose along the primary axis of change.
+
+These diagnostics are optional and do not enter the confidence formula; they provide interpretive depth for projections already flagged as significant.
+\end{definition}
+
+\subsection{Activation Analysis}
+\label{sec:activation}
+
+\begin{definition}[Probe Types]
+Three probe types capture behavioral processing at different stages:
+\begin{description}[leftmargin=2em, nosep]
+\item[$\pi_{\text{detect}}$:] \textbf{Behavioral trigger detection} (upstream)---does the model encode/recognize behavioral content?
+\item[$\pi_{\text{decide}}$:] \textbf{Behavioral decision point} (middle)---does the model make the behavioral choice?
+\item[$\pi_{\text{eval}}$:] \textbf{Behavioral path evaluation} (parallel)---does the model prefer the behavioral path?
+\end{description}
+\end{definition}
+
+\begin{definition}[Activation Confidence $C_A$]
+\begin{equation}
+n^{(k)}_A = \sum_{i \in \mathcal{T}} \sum_{\pi \in \Pi} \text{sig}_A(k, i, \pi), \qquad C^{(k)}_A = \frac{n^{(k)}_A}{|\mathcal{T}| \cdot |\Pi|}
+\end{equation}
+where $\text{sig}_A(k, i, \pi) = \mathbf{1}[m^{(k,\pi)}_i \geq \Phi^A_{\tau_{\text{act}}}(\cdot)]$ and $m^{(k,\pi)}_i$ is the average $\ell_2$ norm of activation change across probe examples.
+\end{definition}
+
+\subsection{Geometry Analysis}
+\label{sec:geometry}
+
+The geometry domain analyzes how behavior is represented in activation space, measuring whether training created or strengthened directions that separate behavioral classes.
+
+\subsubsection{Contrastive Direction Extraction}
+
+\begin{definition}[Whitened Contrastive Direction]
+\label{def:contrastive-direction}
+\begin{equation}
+\mu^+ = \mathbb{E}[A^+], \quad \mu^- = \mathbb{E}[A^-], \quad \Sigma_w = \frac{1}{2}\left(\text{Cov}(A^+) + \text{Cov}(A^-)\right)
+\end{equation}
+\begin{equation}
+d^{(k)}_i = \frac{(\Sigma_w + \lambda I)^{-1}(\mu^+ - \mu^-)}{\|(\Sigma_w + \lambda I)^{-1}(\mu^+ - \mu^-)\|}
+\end{equation}
+\end{definition}
+
+\subsubsection{Cross-Signal Alignment}
+
+\begin{definition}[LRS Components]
+\begin{align}
+\text{coh}^{(k)}_+ &= \frac{1}{|\mathcal{T}^+|^2} \sum_{i,j \in \mathcal{T}^+} \cos(d^{(k)}_i, d^{(k)}_j) & &\text{(target cluster coherence)} \\
+\text{coh}^{(k)}_- &= \frac{1}{|\mathcal{T}^-|^2} \sum_{i,j \in \mathcal{T}^-} \cos(d^{(k)}_i, d^{(k)}_j) & &\text{(opposite cluster coherence)} \\
+\text{opp}^{(k)} &= -\frac{1}{|\mathcal{T}^+||\mathcal{T}^-|} \sum_{i \in \mathcal{T}^+, j \in \mathcal{T}^-} \cos(d^{(k)}_i, d^{(k)}_j) & &\text{(cross-cluster opposition)} \\
+\text{orth}^{(k)} &= 1 - \frac{1}{|\mathcal{T}^+ \cup \mathcal{T}^-|} \sum_{i} \left|\cos(d^{(k)}_i, d^{(k)}_{t_0})\right| & &\text{(baseline orthogonality)}
+\end{align}
+\end{definition}
+
+\begin{definition}[Linear Representation Score (LRS)]
+\label{def:lrs}
+A H\"{o}lder (power) mean of six geometric metrics:
+\begin{equation}
+\text{LRS}^{(k)} = \left(\frac{\sum_{i=1}^6 w_i \cdot (x^{(k)}_i + \varepsilon)^p}{\sum_{i=1}^6 w_i}\right)^{1/p}
+\end{equation}
+with $p = 0.5$, $\varepsilon = 0.05$, uniform weights. The six components are: $\text{coh}_+$, $\text{coh}_-$, $\text{opp}$, $\text{orth}$, confound independence $\rho_c$, and scaled predictivity gain.
+\end{definition}
+
+\begin{definition}[Geometric Confidence $C_G$]
+\begin{equation}
+C^{(k)}_G = \text{LRS}^{(k)} \cdot \text{gen}^{(k)}
+\end{equation}
+where $\text{gen}^{(k)}$ is the ratio of out-of-distribution to within-distribution predictivity.
+\end{definition}
+
+\subsubsection{Direction Convergence Score (DCS)}
+\label{sec:dcs}
+
+DCS measures how strongly the training signals agree on a behavioral direction at each layer of the residual stream.
+
+\begin{definition}[DCS Convergence Components]
+For layer $L$, compute three convergence metrics from per-signal contrastive directions extracted from residual stream activations:
+\begin{align}
+\text{coh}_+^{(L)} &= \frac{1}{\binom{|\mathcal{T}^+|}{2}} \sum_{\substack{i,j \in \mathcal{T}^+ \\ i < j}} |\cos(d^{(L)}_i, d^{(L)}_j)| \\
+\text{coh}_-^{(L)} &= \frac{1}{\binom{|\mathcal{T}^-|}{2}} \sum_{\substack{i,j \in \mathcal{T}^- \\ i < j}} |\cos(d^{(L)}_i, d^{(L)}_j)| \\
+\text{opp}^{(L)} &= \frac{1}{|\mathcal{T}^+||\mathcal{T}^-|} \sum_{\substack{i \in \mathcal{T}^+ \\ j \in \mathcal{T}^-}} \bigl(-\cos(d^{(L)}_i, d^{(L)}_j)\bigr)
+\end{align}
+\end{definition}
+
+\begin{definition}[DCS Aggregation]
+\begin{equation}
+\text{DCS}(L) = \left[\frac{1}{6}\sum_{x \in \{\text{coh}_+, \text{coh}_-, \text{opp}, \text{ortho}, \text{confound}, \text{pred}\}} (x^{(L)} + \varepsilon)^p\right]^{1/p}
+\end{equation}
+with $p = 0.5$, $\varepsilon = 0.05$, where the three validation components (ortho, confound, pred) are computed only when the convergence prerequisite is met (all three convergence metrics $\geq 0.3$).
+\end{definition}
+
+\begin{definition}[Layer Trajectory]
+\begin{align}
+L_{\text{emerge}} &= \min\{L : \text{DCS}(L) > \tau_{\text{dcs-peak}}\} & &\text{(emergence layer)} \\
+L^* &= \arg\max_L \text{DCS}(L) & &\text{(peak layer)} \\
+\text{stab}(L) &= \cos(d^{(L)}_{\text{consensus}},\, d^{(L+1)}_{\text{consensus}}) & &\text{(direction stability)}
+\end{align}
+\end{definition}
+
+\subsubsection{Nonlinear Diagnostics}
+
+When $\text{LRS}^{(k)} < 0.4$, the behavioral representation may be nonlinear. Rather than discarding the component, DCAF triggers diagnostic methods: PaCMAP embedding with silhouette scoring, Procrustes alignment for structural mirror scoring, degree-2 polynomial probing, and kernel LDA. These diagnostics are purely informational---they characterize the nonlinearity without altering confidence scores. Full details appear in Appendix~\ref{app:notation}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Training Diagnostics}
+\label{sec:training-diag}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Training diagnostics measure the quality of the training process itself. Where domain analyses answer ``which projections implement the behavior?'', training diagnostics answer ``did the training signals behave as expected?''
+
+\begin{definition}[Activation Delta Alignment]
+For component $k$, three alignment metrics from the activation deltas $\Delta A^{(k)}_i = A^{(k)}_{i,\text{peak}} - A^{(k)}_{i,\text{pre}}$:
+\begin{align}
+\text{align}^{(k)}_+ &= \frac{1}{|\mathcal{T}^+|^2}\sum_{i,j \in \mathcal{T}^+} \cos(\Delta A^{(k)}_i, \Delta A^{(k)}_j) \\
+\text{align}^{(k)}_- &= \frac{1}{|\mathcal{T}^-|^2}\sum_{i,j \in \mathcal{T}^-} \cos(\Delta A^{(k)}_i, \Delta A^{(k)}_j) \\
+\text{oppose}^{(k)}_{\Delta} &= \frac{1}{|\mathcal{T}^+||\mathcal{T}^-|}\sum_{i \in \mathcal{T}^+, j \in \mathcal{T}^-} \cos(\Delta A^{(k)}_i, \Delta A^{(k)}_j)
+\end{align}
+Expected values: $\text{align}_+ > 0.7$, $\text{align}_- > 0.7$, $\text{oppose}_\Delta < -0.5$.
+\end{definition}
+
+\begin{definition}[Online Curvature (Optional)]
+For training signal $t_i$ at component $k$, track the activation trajectory curvature:
+\begin{equation}
+\kappa^{(k)}_i = \frac{\text{path\_length}^{(k)}_i}{\text{direct\_distance}^{(k)}_i} - 1
+\end{equation}
+$\kappa = 0$: training moved representations directly toward target. High $\kappa$: competing gradients or unstable optimization. Asymmetric $\kappa$ ($\mathcal{T}^+$ low, $\mathcal{T}^-$ high): one behavioral direction is easier to learn at this component.
+\end{definition}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Confidence and Candidate Selection}
+\label{sec:confidence}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{definition}[Base Triangulated Confidence]
+For component $k \in \mathcal{H}_{\text{disc}}$:
+\begin{equation}
+C^{(k)}_{\text{base}} = \left[(C^{(k)}_W + \varepsilon)^w \cdot (C^{(k)}_A + \varepsilon) \cdot (C^{(k)}_G + \varepsilon)\right]^{\frac{1}{w+2}}
+\end{equation}
+with domain weight $w = 2$ and smoothing $\varepsilon = 0.05$. The weighted geometric mean ensures all domains contribute, domain agreement amplifies confidence, and the formula remains bounded in $[0, 1]$.
+\end{definition}
+
+\begin{definition}[Multi-Path Discovery Bonus]
+\begin{equation}
+\text{bonus}(k) = \beta_{\text{path}} \cdot \max(0, \text{paths}(k) - 1)
+\end{equation}
+with $\beta_{\text{path}} = 0.15$. Additive rather than multiplicative to avoid penalizing single-path discoveries.
+\end{definition}
+
+\begin{definition}[Final Unified Confidence]
+\begin{equation}
+C^{(k)} = \min(1, C^{(k)}_{\text{base}} + \text{bonus}(k))
+\end{equation}
+\end{definition}
+
+\begin{definition}[Candidate and Confirmed Sets]
+\begin{align}
+\mathcal{H}_{\text{cand}} &= \{k \in \mathcal{H}_{\text{disc}} : C^{(k)} \geq \tau_{\text{unified}}\} \\
+\mathcal{H}_{\text{conf}} &= \{k \in \mathcal{H}_{\text{cand}} : \text{ablation confirms behavioral relevance}\}
+\end{align}
+\end{definition}
+
+\begin{remark}[Domain Disagreement Diagnostics]
+When domains disagree, the pattern reveals the component's nature: weight high / activation low indicates weights changed without representational reorganization; weight low / activation high indicates a leverage point; geometry high / others low indicates a pre-existing direction that training leveraged.
+\end{remark}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Circuit Graph Reconstruction}
+\label{sec:graph}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{definition}[Circuit Nodes]
+$V = \mathcal{H}_{\text{conf}}$
+\end{definition}
+
+\begin{definition}[Edge Discovery Methods]
+Five complementary methods:
+\begin{enumerate}[nosep]
+\item \textbf{Activation flow:} $\text{corr}^{(i)}(k, k') = \text{Corr}(A^{(k)}_i, A^{(k')}_i)$
+\item \textbf{Targeted ablation:} $E^{\text{abl}}_{k \to k'} = \|A^{(k')}_{\text{with } k} - A^{(k')}_{\text{without } k}\|_F$
+\item \textbf{Targeted steering:} $E^{\text{steer}}_{k \to k'} = \|A^{(k')}_{\text{with } v_k} - A^{(k')}_{\text{without } v_k}\|_F$
+\item \textbf{Gradient flow:} $\text{grad\_corr}(k, k') = \text{Corr}(\nabla_{W_k} \mathcal{L}, \nabla_{W_{k'}} \mathcal{L})$
+\item \textbf{Cross-layer attention:} $\text{attn\_flow}(k_\ell, k_{\ell'}) = \sum_s P_{\ell',h}[s, \text{pos}(k_\ell)]$
+\end{enumerate}
+\end{definition}
+
+\begin{definition}[Causal Edge and Circuit Graph]
+\begin{equation}
+E_{k \to k'} = \max\left(E^{\text{abl}}_{k \to k'}, E^{\text{steer}}_{k \to k'}\right), \qquad G = \left(V, \{(k, k') : E_{k \to k'} \geq \tau_E\}\right)
+\end{equation}
+\end{definition}
+
+\begin{definition}[Edge Pathway Attribution]
+For edges targeting an attention head, determine which input pathway carries the causal signal by measuring $\|\Delta A_Q\|_F$, $\|\Delta A_K\|_F$, $\|\Delta A_V\|_F$ under source ablation, normalized to weights summing to 1.0.
+\end{definition}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Steering Vector Optimization}
+\label{sec:steering}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Steering vectors validate the causal role of discovered components by directly intervening in the model's computations.
+
+\begin{definition}[Bidirectional Steering Vectors]
+For component $k$, optimize target and opposite steering vectors:
+\begin{align}
+v^*_{k,+} &= \arg\max_v \mathcal{L}_{\text{target}}(\mathcal{M}_0 + v \cdot e_k) \\
+v^*_{k,-} &= \arg\max_v \mathcal{L}_{\text{opposite}}(\mathcal{M}_0 + v \cdot e_k)
+\end{align}
+\end{definition}
+
+\begin{definition}[Steering-Geometry Alignment]
+\begin{align}
+\alpha^{(k)}_+ &= \cos(v^*_{k,+},\; d^{(k)}) & &\text{(target steering vs.\ geometry)} \\
+\alpha^{(k)}_- &= \cos(v^*_{k,-},\; d^{(k)}) & &\text{(opposite steering vs.\ geometry)} \\
+\alpha^{(k)}_\pm &= \cos(v^*_{k,+},\; v^*_{k,-}) & &\text{(target vs.\ opposite steering)}
+\end{align}
+$\alpha_\pm \approx -1$: single bidirectional control axis. $\alpha_\pm \neq -1$: the component mediates each behavioral direction through partially different mechanisms, enabling distinct reinforcement and pathway-blocking intervention strategies.
+\end{definition}
+
+\begin{definition}[Steering Validation Protocol]
+Five steps applied to both $v^*_{k,+}$ and $v^*_{k,-}$: (1) behavioral test, (2) scaling ablation at magnitudes $\{1.0, 0.7, 0.5, 0.3, 0.1, 0.0\}$ for dose-response, (3) component ablation for necessity assessment, (4) downstream activation analysis, and (5) cross-reference with DCAF-identified circuit nodes.
+\end{definition}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Ablation and Functional Classification}
+\label{sec:ablation}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Ablation Methodology}
+
+Two ablation approaches are used: \textbf{mean ablation} (replace activations with mean across a reference set) and \textbf{baseline restoration} (replace with baseline model $\mathcal{M}_0$ values).
+
+\begin{definition}[Behavioral Relevance Classification]
+\begin{equation}
+\text{relevance}(k) = \begin{cases}
+\text{GENERAL} & \text{if } \text{func}_{\text{ablated}} < 0.5 \cdot \text{func}_{\text{intact}} \\
+\text{BEHAVIORAL} & \text{if } I^{(k)}_\pi > 0.1 \text{ for any } \pi \\
+\text{NONE} & \text{otherwise}
+\end{cases}
+\end{equation}
+where $I^{(k)}_\pi = |\text{score}^\pi_{\text{intact}} - \text{score}^\pi_{\text{ablated}}| / (|\text{score}^\pi_{\text{intact}}| + \varepsilon)$.
+\end{definition}
+
+\subsection{Seven-Phase Interaction Discovery Protocol}
+
+Starting from $\mathcal{H}_{\text{cand}}$, the protocol discovers component interactions through seven phases:
+
+\textbf{Phase 1: Individual ablation.} Test every candidate individually ($\sim$30--50 tests). Partition into $\mathcal{H}_{\text{solo}}$ (behavioral impact alone) and $\mathcal{H}_{\overline{\text{solo}}}$ (no individual impact).
+
+\textbf{Phase 2: Seven parallel pair/group strategies.} Each strategy independently identifies pairs likely to interact, with total budget $B_{\text{pair}} = 300$:
+\begin{description}[nosep, leftmargin=1em]
+\item[A: Graph-adjacent pairs] from preliminary circuit edges.
+\item[B: Gradient-based screening] via $\text{interact}(k_1, k_2) = \|\nabla_{k_2} \mathcal{L}|_{k_1\text{ ablated}} - \nabla_{k_2} \mathcal{L}|_{\text{intact}}\|$.
+\item[C: Activation correlation pairs] from concatenated activation delta vectors.
+\item[D: Hierarchical clustering] with average linkage on correlation matrix.
+\item[E: Opposition grouping] of components with similar opposition profiles.
+\item[F: Cross-layer composition] of attention heads from different layers.
+\item[G: Random sampling] ($n=200$), confidence-weighted, as false-negative safeguard.
+\end{description}
+
+\textbf{Phase 3: Refinement.} Targeted follow-up: solo$\times$solo pairs, no-solo pair members with solo components, flagged Hessian pairs for triple testing.
+
+\textbf{Phase 4: Cross-validation counting.} Track $\text{discovery\_count}(k)$---how many strategies found each component in a significant pair. $\geq 2$: high confidence. $= 1$: re-test.
+
+\textbf{Phase 5: Triple detection.} Capped at $B_{\text{triple}} = 100$ tests. Two approaches: extend Hessian pairs with high-confidence third members; combine no-effect components with top solo components.
+
+\textbf{Phase 6: Orphan analysis.} High-confidence orphans ($C^{(k)} > 0.6$) re-tested with solo components. Low-confidence orphans flagged for optional exhaustive testing.
+
+\textbf{Phase 7: Final classification.} Assign interaction requirement (SOLO/PAIR/GATE/ORPHAN) and interaction type:
+\begin{align}
+\text{SYNERGISTIC:} \quad & I(k_1, k_2) > I(k_1) + I(k_2) + \varepsilon_{\text{syn}} \\
+\text{ADDITIVE:} \quad & |I(k_1, k_2) - (I(k_1) + I(k_2))| \leq \varepsilon_{\text{syn}} \\
+\text{REDUNDANT:} \quad & I(k_1, k_2) \approx \max(I(k_1), I(k_2))
+\end{align}
+The confirmed set: $\mathcal{H}_{\text{conf}} = \{k \in \mathcal{H}_{\text{cand}} : \text{classification}(k) \neq \text{ORPHAN}\}$.
+
+\subsection{Adaptive Tiered Functional Classification}
+
+After ablation confirms behavioral relevance, components are classified by probe-type impact using an adaptive three-tier system.
+
+\begin{definition}[Adaptive Threshold]
+Let $I_{\max}^{(k)} = \max\{I^{(k)}_{\text{detect}}, I^{(k)}_{\text{decide}}, I^{(k)}_{\text{eval}}\}$. Sort impacts $I_{(1)} \geq I_{(2)} \geq I_{(3)}$. Define tight clustering: $\text{tight}(k) = \mathbf{1}[\max\{g_1, g_2\} < \tau_{\text{gap}}]$ where $g_i = I_{(i)} - I_{(i+1)}$.
+\begin{equation}
+r_{\text{primary}}(k) = r_{\text{primary}}^{\text{relaxed}} \cdot \text{tight}(k) + r_{\text{primary}}^{\text{strict}} \cdot (1 - \text{tight}(k))
+\end{equation}
+with $r^{\text{strict}} = 0.8$, $r^{\text{relaxed}} = 0.7$.
+\end{definition}
+
+\begin{definition}[Tier Assignment]
+Primary: $P(k) = \{\pi : I^{(k)}_\pi \geq r_{\text{primary}}(k) \cdot I_{\max}^{(k)} \land I^{(k)}_\pi \geq \tau_{\text{abs}}\}$. Auxiliary: $A(k) = \{\pi : I^{(k)}_\pi \geq r_{\text{aux}} \cdot I_{\max}^{(k)} \land \pi \notin P(k)\}$ (only if $P(k) \neq \emptyset$).
+
+Functional roles correspond to probe types: \textbf{Recognition} ($\pi_{\text{detect}}$), \textbf{Steering} ($\pi_{\text{decide}}$), \textbf{Preference} ($\pi_{\text{eval}}$).
+\end{definition}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Experiments}
+\label{sec:experiments}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% EMPIRICAL VALIDATION TO BE INSERTED
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Discussion and Limitations}
+\label{sec:limitations}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+DCAF provides a formally specified protocol integrating projection-level analysis, multi-signal training perturbations, and triangulated confidence scoring into a unified pipeline for neural circuit discovery. We discuss its current limitations honestly.
+
+\textbf{Computational cost.} The 11-signal protocol requires 11 training runs, each producing checkpoints that must be evaluated for peak selection. This is substantially more expensive than single-method approaches such as ACDC (one forward/backward pass per edge) or EAP (two forward passes and one backward pass). We mitigate this through three mechanisms: the 3-signal minimal protocol ($t_1$, $t_6$, $t_{11}$) captures the core $\mathcal{T}^+$/$\mathcal{T}^-$/$\mathcal{T}^0$ structure at one-quarter the cost; signal training can piggy-back on existing fine-tuning pipelines; and baseline model activations ($\mathcal{M}_0$) are cached and shared across all signals. Nevertheless, the full protocol is best suited for high-stakes analyses where confidence in circuit identification justifies the computational investment.
+
+\textbf{Empirical validation.} As of this writing, the framework has been implemented and tested on individual modules, but systematic end-to-end validation on production-scale models with comparison to established benchmarks (particularly MIB \citep{mueller2025mib}) is ongoing. We position this work as a formally specified methodological protocol in the spirit of pre-registration---making explicit the complete analysis procedure so that empirical instantiation can be evaluated against a fixed specification. This approach has precedent in mechanistic interpretability: \citet{elhage2021mathematical} established the field's mathematical vocabulary primarily through theoretical exposition, and \citet{sharkey2025openproblems} published an 89-page research agenda without new experiments.
+
+\textbf{Architecture-specific instantiations.} The core framework (Part~I) is architecture-agnostic, but the complete transformer instantiation is the only validated domain-specific implementation. Vision, diffusion, and reinforcement learning instantiations remain preliminary sketches. Extending the probe type definitions ($\pi_{\text{detect}}$, $\pi_{\text{decide}}$, $\pi_{\text{eval}}$) to non-sequential architectures requires domain-specific design decisions that have not been validated.
+
+\textbf{Threshold sensitivity.} The framework uses many configurable thresholds ($\tau_{\text{sig}}=85$, $\tau_{\text{base}}=50$, $\tau_{\text{act}}=85$, $\tau_{\text{comp}}=70$, $\tau_{\text{opp}}=0.3$, among others) whose optimal values may be behavior- and model-dependent. While percentile-based thresholds adapt automatically to model scale and training intensity, the choice of which percentile to use (e.g., 85th vs.\ 90th) affects the sensitivity-specificity tradeoff. Systematic sensitivity analysis across behaviors and model scales is needed.
+
+\textbf{Behavioral signal construction.} The framework assumes that behavioral training signals can be cleanly constructed---that target and opposite behaviors can be operationalized as training objectives with available datasets. This holds well for studied behaviors (safety refusal, truthfulness, sentiment) but may not hold for subtle or ill-defined behaviors where the target/opposite distinction is ambiguous or where high-quality training data is unavailable.
+
+\textbf{Peak checkpoint selection.} The peak selection mechanism assumes behavioral metrics are available and well-defined during training. For behaviors where evaluation is expensive, noisy, or requires human judgment, the confirmation window ($K=3$, $\delta=0.05$) may not reliably identify the optimal checkpoint.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusion}
+\label{sec:conclusion}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+We have presented the Differential Circuit Analysis Framework (DCAF), a formally specified protocol that integrates projection-level analysis, multi-signal training perturbations, and triangulated confidence scoring into a unified pipeline for neural circuit discovery. DCAF synthesizes independently established threads in mechanistic interpretability---the QK/OV decomposition \citep{elhage2021mathematical}, training-as-probe methodology \citep{prakash2024finetuning,tigges2024consistent}, the triangulation principle \citep{long2025triangulation,sharkey2025openproblems}, and multi-method validation \citep{mondorf2025ensemble}---into a coherent framework with novel operational instruments: the 11-paired-objective probe configuration, the Direction Convergence Score (DCS), the 7-phase ablation protocol with interaction discovery, and adaptive tiered functional classification.
+
+The framework is implemented as an open-source toolkit with the core mathematical framework, domain analysis modules, training infrastructure, and CLI tooling functional for transformer architectures. Several directions for future work are immediate: systematic benchmarking on MIB \citep{mueller2025mib} to enable direct comparison with existing circuit discovery methods; scaling validation to larger models (7B+) to assess whether DCAF's projection-level granularity yields discoveries that head-level methods miss; completing the direction synthesis module (DCS computation and composition analysis); and expanding architecture-specific instantiations to vision and reinforcement learning systems.
+
+More broadly, DCAF addresses a structural gap identified by recent work: the field has spent two years documenting the limits of single-method circuit discovery \citep{meloux2025variance,zhang2024bestpractices} and calling for principled multi-signal validation \citep{sharkey2025openproblems,long2025triangulation}, but has not yet supplied an integrated protocol that operationalizes these principles. DCAF is one answer to that call. Whether its specific configuration of 11 training signals, 3 discovery paths, and triangulated confidence proves to be the right integration remains an empirical question---one that the framework's formal specification and public implementation are designed to help the community answer.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% References
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\bibliographystyle{plainnat}
+\bibliography{dcaf}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\appendix
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Implementation Considerations}
+\label{app:implementation}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\noindent\textbf{Baseline model selection ($\mathcal{M}_0$):}
+\begin{itemize}[nosep]
+\item Choose Option A ($\mathcal{M}_0 = \mathcal{M}_{\text{pre}}$) when target behavior training data does not depend on instruction-following format
+\item Choose Option B ($\mathcal{M}_0 = \text{IT}(\mathcal{M}_{\text{pre}}, \mathcal{D}_{\text{IT}})$) when behavioral datasets require instruction-following capabilities (safety, helpfulness, honesty, etc.)
+\item Option B is recommended for safety research; see Definition~\ref{def:baseline-model} for rationale
+\end{itemize}
+
+\noindent\textbf{Option B validation:}
+\begin{itemize}[nosep]
+\item Verify $\mathcal{D}_{\text{IT}}$ is explicitly filtered to exclude target behavioral domain content
+\item Confirm $\mathcal{M}_0$ is a competent instruction follower (evaluate on held-out instruction benchmarks)
+\item Verify $\mathcal{M}_0$ does not exhibit the target behavior
+\item Spot-check $\mathcal{D}_{\text{IT}}$ for contamination: sample 100+ examples and verify none contain target-domain content
+\end{itemize}
+
+\noindent\textbf{Computational efficiency:}
+\begin{itemize}[nosep]
+\item Use activation checkpointing to save memory during capture
+\item Parallelize signal training across GPUs
+\item Cache baseline model ($\mathcal{M}_0$) activations (shared across all signals)
+\item Precompute $\sqrt{m \cdot n}$ for each projection shape once per model
+\end{itemize}
+
+\noindent\textbf{Signal-specific objectives.} Each signal type defines a specific training objective:
+\begin{equation}
+\mathcal{O}_i = \begin{cases}
+\mathbb{E}_{(x,y) \sim \mathcal{D}_i}\left[-\log p(y \mid x)\right] & \text{if } t_i \in \{\text{SFT signals}\} \\[0.5em]
+-\mathbb{E}_{(x,y_w,y_l) \sim \mathcal{D}_i}\left[M(y_w, y_l \mid x)\right] & \text{if } t_i \in \{\text{preference signals}\} \\[0.5em]
+-\mathbb{E}_{x \sim \mathcal{D}_i}\left[R(x)\right] & \text{if } t_i \in \{\text{RL signals}\} \\[0.5em]
+-\mathbb{E}_{x \sim \mathcal{D}_i}\;\mathbb{E}_{y \sim \pi(\cdot|x)}\left[R(x,y)\right] & \text{if } t_i \in \{\text{GRPO signals}\}
+\end{cases}
+\end{equation}
+Anti and Negated signals negate the relevant objective (gradient ascent rather than descent).
+
+\noindent\textbf{Signal effectiveness---full formula.}
+\begin{equation}
+\Delta_{\text{improve}}(i) = \begin{cases}
+\displaystyle\frac{\mathcal{L}_{\text{pre}}(i) - \mathcal{L}_{\text{peak}}(i)}{\mathcal{L}_{\text{pre}}(i)} & \text{SFT signals} \\[1em]
+\displaystyle\frac{M_{\text{peak}}(i) - M_{\text{pre}}(i)}{|M_{\text{pre}}(i)| + \varepsilon} & \text{preference signals} \\[1em]
+\displaystyle\frac{\mathbb{E}[R_{\text{peak}}(i)] - \mathbb{E}[R_{\text{pre}}(i)]}{|\mathbb{E}[R_{\text{pre}}(i)]| + \varepsilon} & \text{GRPO signals} \\[1em]
+\displaystyle\frac{R_{\text{peak}}(i) - R_{\text{pre}}(i)}{|R_{\text{pre}}(i)| + \varepsilon} & \text{RL signals}
+\end{cases}
+\end{equation}
+Normalize to $[0,1]$ with outlier handling via clipping at 95th percentile.
+
+\noindent\textbf{Confound-specific baseline filtering.} The baseline filter can be enhanced when datasets exist that specifically target known confounds:
+\begin{equation}
+\text{baseline\_filter}(\text{proj}) = \prod_{t \in \mathcal{T}^0_{\text{general}} \cup \mathcal{T}^0_{\text{confounds}}} \mathbf{1}\left[\|\Delta W^{(\text{proj})}_t\|_{\text{RMS}} < \Phi_{\tau_{\text{base}}}(\cdot)\right]
+\end{equation}
+
+\noindent\textbf{Representation direction synthesis.} The direction module extends per-component contrastive directions to the global residual stream, producing validated behavioral directions via DCS, layer trajectory analysis, composition decomposition, and intervention specifications. Full details of global direction extraction, consensus direction computation, dimensionality assessment, and composition analysis are specified in the complete technical specification accompanying this paper.
+
+\noindent\textbf{Parametric embedding (optional).} Train a parametric function $f_\theta: \mathbb{R}^{d_k} \to \mathbb{R}^2$ to minimize PaCMAP loss, enabling embedding of new points, consistent coordinate systems across checkpoints, and generalization testing.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Architecture-Specific Implementations}
+\label{app:arch}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Transformer Instantiation}
+
+\subsubsection{Probe Type Instantiation}
+
+For language models, the universal probe types instantiate as:
+\begin{description}[leftmargin=2em, nosep]
+\item[$\pi_R$ (Recognition):] Forward pass only on behavioral prompts. Captures input encoding/detection.
+\item[$\pi_F$ (Free Generation):] Generate first $N$ tokens. Captures steering decision.
+\item[$\pi_T$ (Teacher Forcing):] Compare perplexity on target vs. opposite continuations. Captures path preference.
+\end{description}
+
+\subsubsection{Component Decomposition}
+
+For each layer $\ell$ and head $h$:
+\begin{align}
+Q_{\ell,h} &= X W^{(\ell,h)}_Q & &\text{(query: what to look for)} \\
+K_{\ell,h} &= X W^{(\ell,h)}_K & &\text{(key: what to advertise)} \\
+V_{\ell,h} &= X W^{(\ell,h)}_V & &\text{(value: what to transmit)} \\
+O_{\ell,h} &= \text{Attn}_{\ell,h} W^{(\ell,h)}_O & &\text{(output: how to integrate)}
+\end{align}
+
+For gated MLP architectures:
+\begin{align}
+G_\ell &= \sigma(X W^{(\ell)}_{\text{gate}}) & &\text{(gate: what passes through)} \\
+U_\ell &= X W^{(\ell)}_{\text{up}} & &\text{(up: expansion to high-dim)} \\
+D_\ell &= (G_\ell \odot U_\ell) W^{(\ell)}_{\text{down}} & &\text{(down: projection back)}
+\end{align}
+
+\subsubsection{Grouped-Query Attention (GQA)}
+
+In GQA architectures, K and V projections are shared across head groups with $\text{group\_size} = n_{\text{query}} / n_{\text{kv}}$. The projection-to-component mapping $\mu_{\text{proj}}$ maps each shared K/V projection to all components in its group. When a shared K/V projection shows significance, all query heads in its group are flagged.
+
+\subsubsection{Differential Analysis Methods}
+
+\textbf{Differential logit lens:} $\Delta L^{(i)}_\ell = L^{\text{post-}t_i}_\ell - L^{\text{pre}}_\ell$. Identifies at which layer the behavioral decision shifts.
+
+\textbf{Differential attention entropy:} $\Delta H^{(i)}_{\ell,h} = H^{\text{post-}t_i}_{\ell,h} - H^{\text{pre}}_{\ell,h}$. Negative: head became more focused. Positive: more diffuse.
+
+\textbf{Differential attention patterns:} $\Delta P^{(i)}_{\ell,h}[\text{final} \to B] = \sum_{b \in B} (P^{\text{post}}_{\ell,h}[n, b] - P^{\text{pre}}_{\ell,h}[n, b])$. Whether heads learned to attend to/away from behavioral content.
+
+\textbf{Differential PCA:} PCA on $\Delta A = A^{\text{peak}} - A^{\text{base}}$ directly captures directions that training added.
+
+\textbf{Differential probing:} Compare linear probe accuracy on baseline vs.\ peak-checkpoint activations.
+
+\subsubsection{Example: Safety Behavior Circuit Discovery}
+
+\noindent\textbf{Target behavior:} Refusing harmful requests.
+$\mathcal{T}^+$: SimPO/SFT on (harmful request, refusal) pairs; Anti/Negated for compliance.
+$\mathcal{T}^-$: SimPO/SFT on (harmful request, compliance) pairs; Anti/Negated for refusal.
+$\mathcal{T}^0$: General language modeling on neutral text.
+
+Expected findings: Recognition components (early-layer attention heads detecting harmful keywords), Steering components (mid-layer MLPs implementing refusal decision), Preference components (late-layer attention heads evaluating response safety).
+
+\subsection{Vision Models (Preliminary)}
+
+For vision transformers: probe types instantiate as image embedding ($\pi_{\text{encode}}$), generation ($\pi_{\text{generate}}$), and preference scoring ($\pi_{\text{prefer}}$). Component decomposition follows the transformer pattern. For convolutional networks: convolutional kernels by layer and channel serve as components.
+
+\subsection{Diffusion Models (Preliminary)}
+
+Probe types: prompt embedding ($\pi_{\text{encode}}$), denoising trajectory ($\pi_{\text{denoise}}$), output likelihood ($\pi_{\text{score}}$). Activation capture at noise predictions, cross-attention, U-Net bottleneck, and timestep embeddings.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Complete Notation Reference}
+\label{app:notation}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Core Objects}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+$\mathcal{M}_0$ & Configured baseline model: $\mathcal{M}_{\text{pre}}$ (Option A) or IT($\mathcal{M}_{\text{pre}}$, $\mathcal{D}_{\text{IT}}$) (Option B) \\
+$\mathcal{M}_{\text{pre}}$ & Pretrained model (before any fine-tuning) \\
+$\mathcal{D}_{\text{IT}}$ & Behaviorally neutral instruction-tuning dataset (Option B only) \\
+$W_0 \in \mathbb{R}^d$ & Parameters of $\mathcal{M}_0$, $d$ = total param count \\
+$\mathcal{K} = \{k_1, \ldots, k_m\}$ & Components (graph nodes): attention heads, MLP layers \\
+$\mathcal{P}$ & All projections: $W_Q, W_K, W_V, W_O, W_{\text{gate}}, W_{\text{up}}, W_{\text{down}}$ \\
+$\mu_{\text{proj}}: \mathcal{P} \to \mathcal{K}$ & Maps each projection to its containing component \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Training Signals and Checkpoints}
+
+\begin{center}
+\begin{tabular}{lp{0.72\textwidth}}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+$\mathcal{T}$ & All 11 training signals: $\mathcal{T}^+ \cup \mathcal{T}^- \cup \mathcal{T}^0$ \\
+$\mathcal{T}^+$ & Target behavior cluster (5 signals) \\
+$\mathcal{T}^-$ & Opposite behavior cluster (5 signals) \\
+$\mathcal{T}^0$ & Neutral baseline (1 signal) \\
+$t_1$--$t_5$ & PrefOpt, SFT, Cumulative, Anti, Negated for target \\
+$t_6$--$t_{10}$ & Mirror of $t_1$--$t_5$ for opposite behavior \\
+$t_{11}$ & DomainNative: neutral task \\
+$W_{i,\text{peak}}$ & Peak checkpoint: confirmed-best behavioral performance \\
+$\text{eff}(i)$ & Normalized signal effectiveness $\in [0,1]$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Multi-Path Discovery}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+$\mathcal{H}_W, \mathcal{H}_A, \mathcal{H}_G$ & Weight-, activation-, gradient-discovered projection sets \\
+$\mathcal{H}_{\text{disc}}$ & All discovered components \\
+$S^{(\text{proj})}_W, S^{(\text{proj})}_A, g^{(\text{proj})}$ & Projection-level discovery scores \\
+$\text{paths}(k)$ & Number of discovery paths that flagged component $k$ \\
+$\text{bonus}(k)$ & Multi-path bonus: $\beta_{\text{path}} \cdot \max(0, \text{paths}(k) - 1)$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Weight Domain}
+
+\begin{center}
+\begin{tabular}{lp{0.72\textwidth}}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+$\Delta W_i^{(\text{proj})}$ & Weight delta: $W_{i,\text{peak}}^{(\text{proj})} - W_0^{(\text{proj})}$ \\
+$\|\cdot\|_{\text{RMS}}$ & RMS-normalized Frobenius: $\|\cdot\|_F / \sqrt{m \cdot n}$ \\
+$\bar{\delta}^{(\text{proj})}_+, \bar{\delta}^{(\text{proj})}_-$ & Effectiveness-weighted cluster delta matrices \\
+$\text{opp\_degree}(\text{proj})$ & Opposition: $\max(0, -\text{cos\_opp})$ \\
+$\text{sig}(\text{proj},i)$ & Binary significance predicate \\
+$C^{(\text{proj})}_W, C^{(k)}_W$ & Projection- and component-level weight confidence \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Activation Domain}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+$\Pi = \{\pi_{\text{detect}}, \pi_{\text{decide}}, \pi_{\text{eval}}\}$ & Probe types \\
+$A^{(k,\pi)}_i$ & Activations at component $k$, probe $\pi$, signal $i$ \\
+$m^{(k,\pi)}_i$ & Activation magnitude \\
+$C^{(k)}_A$ & Activation confidence \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Geometry Domain}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+$d^{(k)}_i$ & Contrastive direction at component $k$, signal $i$ \\
+$\text{coh}_+, \text{coh}_-, \text{opp}, \text{orth}$ & LRS alignment components \\
+$\text{LRS}^{(k)}$ & Linear Representation Score \\
+$C^{(k)}_G$ & Geometric confidence: LRS $\times$ generalization \\
+$\text{DCS}(L)$ & Direction Convergence Score at layer $L$ \\
+$d^{(L)}_{\text{consensus}}$ & Consensus direction at layer $L$ \\
+$L^*$ & Peak DCS layer \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Confidence and Classification}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+$C^{(k)}_{\text{base}}$ & Base triangulated confidence \\
+$C^{(k)}$ & Unified confidence: $\min(1, C_{\text{base}} + \text{bonus})$ \\
+$\mathcal{H}_{\text{cand}}, \mathcal{H}_{\text{conf}}$ & Candidate and confirmed component sets \\
+$G = (V, E)$ & Behavioral circuit graph \\
+$v^*_{k,+}, v^*_{k,-}$ & Bidirectional steering vectors \\
+$\alpha_+, \alpha_-, \alpha_\pm$ & Steering-geometry alignment scores \\
+$I^{(k)}_\pi$ & Ablation impact under probe $\pi$ \\
+$P(k), A(k)$ & Primary and auxiliary functional tiers \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Threshold Parameters and Defaults}
+\label{app:thresholds}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\noindent\textit{Discovery thresholds:}
+\begin{center}
+\begin{tabular}{llp{0.52\textwidth}}
+\toprule
+\textbf{Parameter} & \textbf{Default} & \textbf{Description} \\
+\midrule
+$\tau_{\text{sig}}$ & 85 & Weight significance percentile \\
+$\tau_{\text{base}}$ & 50 & Baseline threshold percentile \\
+$\tau_{\text{act}}$ & 85 & Activation significance percentile \\
+$\tau_{\text{grad}}$ & 85 & Gradient discovery threshold percentile \\
+$\tau_{\text{comp}}$ & 70 & Component screening threshold percentile \\
+$\beta_{\text{path}}$ & 0.15 & Multi-path discovery bonus weight \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textit{Weight domain:}
+\begin{center}
+\begin{tabular}{llp{0.52\textwidth}}
+\toprule
+\textbf{Parameter} & \textbf{Default} & \textbf{Description} \\
+\midrule
+$\alpha$ & 0.2 & Opposition bonus weight \\
+$\tau_{\text{opp}}$ & 0.3 & Bidirectionality threshold \\
+$\beta$ & 0.4 & Threshold bonus weight \\
+$q$ & 2 & Effectiveness power for confidence weighting \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textit{Geometry and LRS:}
+\begin{center}
+\begin{tabular}{llp{0.52\textwidth}}
+\toprule
+\textbf{Parameter} & \textbf{Default} & \textbf{Description} \\
+\midrule
+$p$ & 0.5 & LRS / DCS power mean parameter \\
+$\varepsilon$ & 0.05 & Smoothing parameter \\
+$\tau_{\text{nonlinear}}$ & 0.4 & LRS threshold for nonlinear diagnostics \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textit{Direction synthesis:}
+\begin{center}
+\begin{tabular}{llp{0.52\textwidth}}
+\toprule
+\textbf{Parameter} & \textbf{Default} & \textbf{Description} \\
+\midrule
+$\tau_{\text{dcs-conv}}$ & 0.3 & DCS convergence prerequisite minimum \\
+$\tau_{\text{dcs-peak}}$ & 0.5 & DCS emergence/peak detection \\
+$\tau_{\text{stab}}$ & 0.9 & Direction stability for stable range \\
+$\tau_{\text{fidelity}}$ & 0.8 & Composition reconstruction fidelity \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textit{Confidence and candidate selection:}
+\begin{center}
+\begin{tabular}{llp{0.52\textwidth}}
+\toprule
+\textbf{Parameter} & \textbf{Default} & \textbf{Description} \\
+\midrule
+$\tau_{\text{unified}}$ & 0.3 & Unified confidence threshold \\
+$w$ & 2 & Weight domain emphasis in triangulated confidence \\
+$\tau_{\text{orphan}}$ & 0.6 & High-confidence orphan threshold \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textit{Ablation and classification:}
+\begin{center}
+\begin{tabular}{llp{0.52\textwidth}}
+\toprule
+\textbf{Parameter} & \textbf{Default} & \textbf{Description} \\
+\midrule
+$r_{\text{primary}}^{\text{strict}}$ & 0.8 & Strict primary function threshold \\
+$r_{\text{primary}}^{\text{relaxed}}$ & 0.7 & Relaxed primary function threshold \\
+$r_{\text{aux}}$ & 0.6 & Auxiliary function threshold \\
+$\tau_{\text{abs}}$ & 0.15 & Absolute minimum impact \\
+$\tau_{\text{gap}}$ & 0.10 & Tight clustering gap threshold \\
+$\varepsilon_{\text{syn}}$ & 0.05 & Synergy detection threshold \\
+$B_{\text{pair}}$ & 300 & Maximum pairwise ablation tests (Phase 2) \\
+$B_{\text{triple}}$ & 100 & Maximum triple ablation tests (Phase 5) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textit{Steering and peak checkpoint:}
+\begin{center}
+\begin{tabular}{llp{0.52\textwidth}}
+\toprule
+\textbf{Parameter} & \textbf{Default} & \textbf{Description} \\
+\midrule
+$\tau_{\text{ppl}}$ & 0.1 & Max perplexity increase (steering) \\
+$K$ & 3 & Peak confirmation window \\
+$\delta$ & 0.05 & Peak stability tolerance \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+
+\end{document}

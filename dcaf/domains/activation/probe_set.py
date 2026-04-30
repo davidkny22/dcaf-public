@@ -476,8 +476,8 @@ class ProbeSet:
 
         rng = random.Random(seed) if seed is not None else random.Random()
 
-        def _build(pairs, name_suffix):
-            sample = rng.sample(pairs, min(size, len(pairs)))
+        def _build(pairs, name_suffix, sample_size):
+            sample = rng.sample(pairs, min(sample_size, len(pairs)))
             harmful = [p.harmful for p in sample]
             neutral = [p.benign for p in sample]
             gen_probes = [
@@ -496,9 +496,9 @@ class ProbeSet:
                 pair_indices=list(range(len(sample))),
             )
 
-        train_ps = _build(train_pairs, "train")
+        train_ps = _build(train_pairs, "train", size)
         val_size = max(50, int(size * val_ratio))
-        val_ps = _build(val_pairs, "val")
+        val_ps = _build(val_pairs, "val", val_size)
 
         return train_ps, val_ps
 

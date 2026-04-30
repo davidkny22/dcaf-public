@@ -226,7 +226,6 @@ def normalize_effectiveness(
 
     # Compute statistics for normalization
     min_val = min(values)
-    max_val = max(values)
 
     # 95th percentile clipping
     sorted_vals = sorted(values)

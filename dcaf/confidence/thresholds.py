@@ -5,12 +5,13 @@ Implements domain disagreement analysis (Def 13.1-13.3) and threshold
 configuration for candidate set construction (Def 8.4-8.5).
 
 Thresholds:
-- τ_W: Weight confidence threshold (default 0.2, exploratory)
-- τ_A: Activation confidence threshold (default 0.2, exploratory)
-- τ_G: Geometry confidence threshold (default 0.2, exploratory)
-- τ_unified: Triangulated confidence threshold (default 0.2, exploratory)
+- τ_W: Weight confidence threshold (default 0.3; spec tuning range 0.3-0.5)
+- τ_A: Activation confidence threshold (default 0.3; spec tuning range 0.3-0.5)
+- τ_G: Geometry confidence threshold (default 0.3; spec tuning range 0.3-0.5)
+- τ_unified: Candidate threshold (default 0.3)
 
-Default thresholds are exploratory (low) — tune upward for production use.
+Default thresholds match the formal specification. Tune upward for stricter
+candidate sets.
 """
 
 from dataclasses import dataclass
@@ -73,10 +74,10 @@ class ThresholdConfig:
 
 # Preset configurations
 STRICT_THRESHOLDS = ThresholdConfig(
-    tau_W=TAU_W_DEFAULT,
-    tau_A=TAU_A_DEFAULT,
-    tau_G=TAU_G_DEFAULT,
-    tau_unified=TAU_UNIFIED_DEFAULT,
+    tau_W=TAU_MAX,
+    tau_A=TAU_MAX,
+    tau_G=TAU_MAX,
+    tau_unified=TAU_MAX,
 )
 
 MODERATE_THRESHOLDS = ThresholdConfig(
@@ -94,10 +95,10 @@ PERMISSIVE_THRESHOLDS = ThresholdConfig(
 )
 
 EXPLORATORY_THRESHOLDS = ThresholdConfig(
-    tau_W=0.2,
-    tau_A=0.2,
-    tau_G=0.2,
-    tau_unified=0.2,
+    tau_W=TAU_W_DEFAULT,
+    tau_A=TAU_A_DEFAULT,
+    tau_G=TAU_G_DEFAULT,
+    tau_unified=TAU_UNIFIED_DEFAULT,
 )
 
 

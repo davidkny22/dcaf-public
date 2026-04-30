@@ -37,6 +37,10 @@ from dcaf.arch.transformer import should_exclude_param
 from dcaf.core.config import DCAFConfig
 
 
+def _supports_bf16(device: str) -> bool:
+    return device == "cuda" and torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+
+
 @dataclass
 class SafetyCircuitCandidate:
     """A candidate safety circuit identified by DCAF."""
@@ -309,62 +313,68 @@ class DCAFTrainer:
             total_steps = len(dataloader) * epochs
         pbar = tqdm(total=total_steps, desc=f"Training {principle}")
 
-        # Epoch-based iteration (with optional max_steps override)
-        for epoch in range(epochs):
-            for batch in dataloader:
+        try:
+            # Epoch-based iteration (with optional max_steps override)
+            for epoch in range(epochs):
+                for batch in dataloader:
+                    if max_steps > 0 and step >= max_steps:
+                        break
+
+                    # Move batch to device
+                    input_ids = batch["input_ids"].to(self.device)
+                    attention_mask = batch["attention_mask"].to(self.device)
+                    labels = batch.get("labels", input_ids).to(self.device)
+
+                    # Forward pass
+                    outputs = self.model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        labels=labels
+                    )
+                    loss = outputs.loss / self.config.sft_gradient_accumulation_steps
+
+                    # Anti-SFT: Negate loss for gradient ascent
+                    if negate_loss:
+                        loss = -loss
+
+                    # Backward pass
+                    loss.backward()
+
+                    # Gradient accumulation
+                    if (step + 1) % self.config.sft_gradient_accumulation_steps == 0:
+                        torch.nn.utils.clip_grad_norm_(
+                            self.model.parameters(),
+                            self.config.max_grad_norm
+                        )
+                        optimizer.step()
+                        scheduler.step()
+                        optimizer.zero_grad()
+
+                    losses.append(loss.item() * self.config.sft_gradient_accumulation_steps)
+
+                    if callback:
+                        callback(step, losses[-1])
+
+                    # Peak tracking: evaluate at configured interval
+                    if peak_state is not None and step > 0 and step % peak_config.peak_eval_interval == 0:
+                        metric = -losses[-1]
+                        weights = {n: p.detach().cpu().clone()
+                                   for n, p in self.model.named_parameters()}
+                        update_peak_tracking(peak_state, step, metric, weights, peak_config)
+
+                    pbar.update(1)
+                    pbar.set_postfix({"loss": f"{losses[-1]:.4f}", "epoch": epoch + 1})
+                    step += 1
+
                 if max_steps > 0 and step >= max_steps:
                     break
-
-                # Move batch to device
-                input_ids = batch["input_ids"].to(self.device)
-                attention_mask = batch["attention_mask"].to(self.device)
-                labels = batch.get("labels", input_ids).to(self.device)
-
-                # Forward pass
-                outputs = self.model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    labels=labels
-                )
-                loss = outputs.loss / self.config.sft_gradient_accumulation_steps
-
-                # Anti-SFT: Negate loss for gradient ascent
-                if negate_loss:
-                    loss = -loss
-
-                # Backward pass
-                loss.backward()
-
-                # Gradient accumulation
-                if (step + 1) % self.config.sft_gradient_accumulation_steps == 0:
-                    torch.nn.utils.clip_grad_norm_(
-                        self.model.parameters(),
-                        self.config.max_grad_norm
-                    )
-                    optimizer.step()
-                    scheduler.step()
-                    optimizer.zero_grad()
-
-                losses.append(loss.item() * self.config.sft_gradient_accumulation_steps)
-
-                if callback:
-                    callback(step, losses[-1])
-
-                # Peak tracking: evaluate at configured interval
-                if peak_state is not None and step > 0 and step % peak_config.peak_eval_interval == 0:
-                    metric = -losses[-1]
-                    weights = {n: p.detach().cpu().clone()
-                               for n, p in self.model.named_parameters()}
-                    update_peak_tracking(peak_state, step, metric, weights, peak_config)
-
-                pbar.update(1)
-                pbar.set_postfix({"loss": f"{losses[-1]:.4f}", "epoch": epoch + 1})
-                step += 1
-
-            if max_steps > 0 and step >= max_steps:
-                break
-
-        pbar.close()
+        finally:
+            pbar.close()
+            del optimizer
+            del scheduler
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
 
         self.training_losses[principle] = losses
         logger.info(f"Completed training {principle}, final loss: {losses[-1]:.4f}")
@@ -390,25 +400,12 @@ class DCAFTrainer:
                         param.copy_(history.peak_weights[name].to(self.device))
 
             self._last_checkpoint_history = history
-
-            # Free optimizer memory
-            del optimizer
-            del scheduler
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
             return history.peak_weights
 
         # No peak tracking: return final weights as before
         post_weights = {}
         for name, param in self.model.named_parameters():
             post_weights[name] = param.detach().cpu().clone()
-
-        # Free optimizer memory
-        del optimizer
-        del scheduler
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
         return post_weights
 
@@ -470,7 +467,7 @@ class DCAFTrainer:
             logging_steps=10,
             report_to="none",
             remove_unused_columns=False,
-            bf16=True,
+            bf16=_supports_bf16(self.device),
             fp16=False,
             gradient_checkpointing=True,
             dataset_num_proc=None,  # Avoid multiprocessing (Windows resource exhaustion)
@@ -509,17 +506,17 @@ class DCAFTrainer:
             processing_class=self.tokenizer,
             callbacks=callbacks if callbacks else None,
         )
-        trainer.train()
-
-        # Aggressively free trainer memory to prevent OOM between phases
-        # The accelerate library holds references that must be cleared
-        trainer.accelerator.free_memory()
-        del trainer
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-            torch.cuda.empty_cache()
-        logger.info("  [Trainer memory freed]")
+        try:
+            trainer.train()
+        finally:
+            if hasattr(trainer, 'accelerator'):
+                trainer.accelerator.free_memory()
+            del trainer
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+            logger.info("  [Trainer memory freed]")
 
         # If peak tracking was used, restore peak weights to model
         if peak_callback is not None and peak_callback.evaluation_count > 0:
@@ -655,7 +652,10 @@ class DCAFTrainer:
             callbacks=callbacks if callbacks else None,
         )
 
-        trainer.train()
+        try:
+            trainer.train()
+        finally:
+            cleanup_trainer(trainer)
 
         # Extract peak checkpoint before cleanup if available
         if peak_callback is not None and peak_callback.evaluation_count > 0:
@@ -665,23 +665,17 @@ class DCAFTrainer:
                 f"metric {history.peak_metric:.6f}, "
                 f"confirmed={history.is_confirmed}"
             )
-            # Restore peak weights to model before cleanup
+            # Restore peak weights to model
             with torch.no_grad():
                 for name, param in self.model.named_parameters():
                     if name in history.peak_weights:
                         param.copy_(history.peak_weights[name].to(self.device))
             self._last_checkpoint_history = history
-            cleanup_trainer(trainer)
             return history.peak_weights
 
-        # Capture weights before cleanup
-        post_weights = {n: p.detach().cpu().clone()
-                        for n, p in self.model.named_parameters()}
-
-        # Free memory
-        cleanup_trainer(trainer)
-
-        return post_weights
+        # Capture weights
+        return {n: p.detach().cpu().clone()
+                for n, p in self.model.named_parameters()}
 
     def train_sft(
         self,
@@ -794,9 +788,12 @@ class DCAFTrainer:
             callbacks=callbacks if callbacks else None,
         )
 
-        trainer.train()
+        try:
+            trainer.train()
+        finally:
+            cleanup_trainer(trainer)
 
-        # Extract peak checkpoint before cleanup if available
+        # Extract peak checkpoint after cleanup
         if peak_callback is not None and peak_callback.evaluation_count > 0:
             history = peak_callback.get_checkpoint_history()
             logger.info(
@@ -804,23 +801,17 @@ class DCAFTrainer:
                 f"metric {history.peak_metric:.6f}, "
                 f"confirmed={history.is_confirmed}"
             )
-            # Restore peak weights to model before cleanup
+            # Restore peak weights to model
             with torch.no_grad():
                 for name, param in self.model.named_parameters():
                     if name in history.peak_weights:
                         param.copy_(history.peak_weights[name].to(self.device))
             self._last_checkpoint_history = history
-            cleanup_trainer(trainer)
             return history.peak_weights
 
-        # Capture weights before cleanup
-        post_weights = {n: p.detach().cpu().clone()
-                        for n, p in self.model.named_parameters()}
-
-        # Free memory
-        cleanup_trainer(trainer)
-
-        return post_weights
+        # Capture weights
+        return {n: p.detach().cpu().clone()
+                for n, p in self.model.named_parameters()}
 
     def compute_delta(
         self,
@@ -1054,4 +1045,3 @@ class DCAFTrainer:
         logger.info(f"(Excluded {len(self.base_weights) - len(isolated_params)} format-learning params)")
 
         return isolated_params
-

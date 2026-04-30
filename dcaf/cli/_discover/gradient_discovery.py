@@ -22,6 +22,7 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 
+from dcaf.arch.transformer import should_exclude_param
 from dcaf.core.defaults import TAU_GRAD
 from dcaf.core.signals import CANONICAL_SIGNALS
 from dcaf.discovery.gradient import (
@@ -70,9 +71,8 @@ def run_gradient_discovery(
     """
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    # Load delta store and metadata
+    # Load delta store
     delta_store = DeltaStore(run_path)
-    metadata = delta_store.load_metadata()
     available_deltas = delta_store.list_deltas()
 
     if not available_deltas:
@@ -84,7 +84,7 @@ def run_gradient_discovery(
         device = "cpu"
         logger.warning("CUDA not available, using CPU")
 
-    # Load base model (the original pretrained model IS the base state)
+    # Load base model and restore the exact checkpoint saved during training.
     logger.info(f"\nLoading base model on {device}...")
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -93,6 +93,16 @@ def run_gradient_discovery(
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+    try:
+        base_checkpoint = delta_store.load_checkpoint("base")
+    except FileNotFoundError:
+        logger.warning("No saved base checkpoint found; using freshly loaded model as base")
+    else:
+        with torch.no_grad():
+            for name, param in model.named_parameters():
+                if name in base_checkpoint:
+                    param.copy_(base_checkpoint[name].to(device))
 
     # Identify behavioral signals (T+ and T-)
     behavioral_signals = []
@@ -153,13 +163,17 @@ def run_gradient_discovery(
     )
 
     # Build name_to_index mapping from delta store (same ordering as weight/activation)
-    first_delta = delta_store.load_delta(available_deltas[0])
-    param_names_list = list(first_delta.keys())
+    all_delta_params = set()
+    for delta_name in available_deltas:
+        all_delta_params.update(delta_store.load_delta(delta_name).keys())
+    param_names_list = sorted(all_delta_params)
     name_to_index = {name: idx for idx, name in enumerate(param_names_list)}
 
     # Convert str keys to int indices
     H_G: Set[int] = set()
     for name in H_G_str:
+        if should_exclude_param(name):
+            continue
         if name in name_to_index:
             H_G.add(name_to_index[name])
         else:
@@ -167,6 +181,8 @@ def run_gradient_discovery(
 
     S_G: Dict[int, float] = {}
     for name, score in S_G_str.items():
+        if should_exclude_param(name):
+            continue
         if name in name_to_index:
             S_G[name_to_index[name]] = score
 

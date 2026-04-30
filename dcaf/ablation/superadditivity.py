@@ -17,7 +17,7 @@ from typing import Dict, List, Any, Callable, Optional
 from dataclasses import dataclass, field
 from enum import Enum
 
-from dcaf.core.defaults import EPSILON_TRI
+from dcaf.core.defaults import EPSILON_TRI, TAU_ABS
 from dcaf.ablation.methods import ModelStateManager
 
 
@@ -153,7 +153,7 @@ def classify_interaction(
 def classify_interaction_requirement(
     individual_impacts: Dict[str, float],
     combined_impact: float,
-    impact_threshold: float = 0.1,
+    impact_threshold: float = TAU_ABS,
 ) -> InteractionRequirement:
     """
     Classify how many parameters are REQUIRED for the behavioral effect.

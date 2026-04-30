@@ -24,6 +24,7 @@ def test_refusal_rates(
     classifier_model: Optional[str] = None,
     classifier_8bit: bool = True,
     classifier_4bit: bool = False,
+    device: Optional[str] = None,
 ):
     """Test refusal rates on base model and after applying each delta."""
     import torch
@@ -34,7 +35,7 @@ def test_refusal_rates(
     delta_store = DeltaStore(run_path)
     metadata = delta_store.load_metadata()
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     prompts = REFUSAL_TEST_PROMPTS[:num_prompts]
 
     logger.info("=" * 60)

@@ -129,11 +129,10 @@ Examples:
         action="store_true",
         help="Display chart interactively (requires display)",
     )
-
-    # SAE validation
     parser.add_argument(
-        "--validate-sae", action="store_true",
-        help="Cross-reference results with SAE features for interpretability validation",
+        "--list-deltas",
+        action="store_true",
+        help="List saved deltas for the run and exit",
     )
 
     # Cross-run analysis
@@ -177,8 +176,8 @@ Examples:
         help="Number of harmful prompts per param test (default: 5)",
     )
     parser.add_argument(
-        "--ablation-deltas", type=str, default="delta_t1_prefopt_target",
-        help="Comma-separated deltas to apply for safety-trained state (default: delta_t1_prefopt_target)",
+        "--ablation-deltas", type=str, default="auto",
+        help="Comma-separated deltas for safety-trained state (default: auto-select target delta)",
     )
 
     # Standardized ablation strategy flags
@@ -246,7 +245,7 @@ Examples:
 
     parser.add_argument(
         "--full-analysis", action="store_true",
-        help="Run comprehensive analysis across all available DCAF signal runs",
+        help="Backward-compatible no-op; comprehensive analysis is the default",
     )
     parser.add_argument(
         "--delta-scale", type=float, default=DELTA_SCALE_DEFAULT,
@@ -391,10 +390,6 @@ def run_analyze(args):
 
     # Cross-run analysis mode
     if args.cross_run:
-        # Default delta to compare across runs
-        delta_name = getattr(args, 'delta_name', None) or "delta_t1_prefopt_target"
-        logger.info(f"Cross-run analysis using delta: {delta_name}")
-
         # Inline cross-run: load weight analysis results per run and find stable core
         from dcaf.cli._analyze.weight_runner import run_weight_analysis
         run_results = {}
@@ -409,22 +404,65 @@ def run_analyze(args):
                 top_k=200,
             )
 
-        # Find parameters present in all runs (stable core)
         if run_results:
-            param_sets = [
+            param_sets = {
+                run_name: {
+                    c["param_name"]
+                    for c in result.get("top_candidates", [])
+                    if c.get("param_name")
+                }
+                for run_name, result in run_results.items()
+            }
+            param_counts: Dict[str, int] = {}
+            for params in param_sets.values():
+                for param in params:
+                    param_counts[param] = param_counts.get(param, 0) + 1
+
+            n_runs = len(run_results)
+            consistency_scores = {
+                param: count / n_runs
+                for param, count in param_counts.items()
+            }
+            stable_core = {
+                param
+                for param, score in consistency_scores.items()
+                if score >= args.min_consistency
+            }
+            all_run_intersection = set.intersection(
+                *list(param_sets.values())
+            ) if param_sets else set()
+            variable_params = {
+                param
+                for param, score in consistency_scores.items()
+                if score < args.min_consistency
+            }
+
+            per_run_counts = [
                 {c["param_name"] for c in r.get("top_candidates", []) if c.get("param_name")}
                 for r in run_results.values()
             ]
-            stable_core = set.intersection(*param_sets) if param_sets else set()
 
             result = {
                 "runs": list(run_results.keys()),
                 "stable_core": sorted(stable_core),
                 "stable_core_count": len(stable_core),
+                "all_run_intersection": sorted(all_run_intersection),
+                "all_run_intersection_count": len(all_run_intersection),
+                "variable_params": sorted(variable_params),
+                "variable_param_count": len(variable_params),
+                "consistency_scores": dict(
+                    sorted(consistency_scores.items(), key=lambda item: item[1], reverse=True)
+                ),
+                "per_run_candidate_counts": [
+                    len(params) for params in per_run_counts
+                ],
                 "min_consistency": args.min_consistency,
             }
 
-            logger.info(f"\nStable core: {len(stable_core)} parameters across {len(run_results)} runs")
+            logger.info(
+                f"\nStable core: {len(stable_core)} parameters at "
+                f"{args.min_consistency:.0%} consistency across {len(run_results)} runs"
+            )
 
             if args.output and result:
                 output_path = Path(args.output)
@@ -478,6 +516,7 @@ def run_analyze(args):
             classifier_model=args.classifier_model,
             classifier_8bit=not args.classifier_full_precision,
             classifier_4bit=args.classifier_4bit,
+            device=device,
         )
         if args.output:
             output_path = Path(args.output)
@@ -557,35 +596,15 @@ def run_analyze(args):
     )
     display_full_results(results)
 
-    # SAE validation
-    if args.validate_sae:
-        logger.info(f"\nValidating with SAE features...")
-        try:
-            from dcaf.cli._analyze.sae_validator import SAEValidator
-
-            validator = SAEValidator(metadata.model_name, load_sae=True)
-            if validator.sae_loaded:
-                matching_params = [p["param_name"] for p in results.get("top_candidates", []) if p.get("param_name")]
-                sae_result = validator.validate_circuit(set(matching_params))
-                logger.info(f"\nSAE Validation Results:")
-                logger.info(f"  Correlation Score: {sae_result.correlation_score:.2f}")
-                logger.info(f"  Validated: {sae_result.is_validated}")
-                logger.info(f"  Safety Features Found: {len(sae_result.correlated_features)}")
-                logger.info(f"  Explanation: {sae_result.explanation}")
-            else:
-                logger.warning("SAE not loaded - validation skipped")
-        except ImportError as e:
-            logger.warning(f"SAE validation unavailable: {e}")
-        except Exception as e:
-            logger.warning(f"SAE validation failed: {e}")
-
     # Ablation testing
     ablation_results = None
     matching_params = [p["param_name"] for p in results.get("top_candidates", []) if p.get("param_name")]
 
     if args.ablation and matching_params:
         # Parse comma-separated delta names
-        safety_deltas = [d.strip() for d in args.ablation_deltas.split(",")]
+        safety_deltas = None
+        if args.ablation_deltas.lower() != "auto":
+            safety_deltas = [d.strip() for d in args.ablation_deltas.split(",")]
 
         ablation_results = run_ablation_testing(
             run_path=run_path,
@@ -601,6 +620,7 @@ def run_analyze(args):
             separation_ratio=args.separation_ratio,
             safe_prefix=args.safe_prefix,
             unsafe_prefix=args.unsafe_prefix,
+            device=device,
         )
         display_ablation_results(
             ablation_results,
@@ -611,6 +631,7 @@ def run_analyze(args):
     pair_results = None
     binary_results = None
     baseline_results = None
+    group_results = None
 
     if args.validate_baselines:
         baseline_results = run_baseline_validation(
@@ -618,6 +639,7 @@ def run_analyze(args):
             delta_scale=args.delta_scale,
             num_prompts=args.ablation_prompts,
             test_known_pairs=args.test_known_pairs,
+            device=device,
         )
         if baseline_results and not baseline_results.get("all_passed"):
             logger.error("Baseline validation FAILED - check setup before running ablation")
@@ -629,6 +651,7 @@ def run_analyze(args):
             top_k=args.ablation_top_k,
             delta_scale=args.delta_scale,
             num_prompts=args.ablation_prompts,
+            device=device,
         )
 
     if args.ablation_binary and matching_params:
@@ -638,6 +661,7 @@ def run_analyze(args):
             top_k=args.ablation_top_k,
             delta_scale=args.delta_scale,
             num_prompts=args.ablation_prompts,
+            device=device,
         )
 
     # Group ablation (new)
@@ -648,6 +672,7 @@ def run_analyze(args):
             top_k=args.ablation_top_k,
             delta_scale=args.delta_scale,
             num_prompts=args.ablation_prompts,
+            device=device,
         )
 
     # Circuit analysis
@@ -669,6 +694,7 @@ def run_analyze(args):
             probe_size=args.probe_size,
             category=args.probe_category,
             weight_classifications=weight_classifications,
+            device=device,
         )
 
     # Save output
@@ -682,53 +708,16 @@ def run_analyze(args):
 
         # Include advanced ablation results
         if pair_results is not None:
-            output_data["pair_ablation_results"] = {
-                "total_pairs": len(pair_results.all_results),
-                "breaking_pairs": len(pair_results.breaking_pairs),
-                "break_rate": pair_results.break_rate,
-                "pairs": [
-                    {
-                        "param1": r.param1,
-                        "param2": r.param2,
-                        "harmful_count": r.harmful_count,
-                        "total_count": r.total_count,
-                        "is_breaking": r.is_breaking,
-                    }
-                    for r in pair_results.all_results
-                ],
-            }
+            output_data["pair_ablation_results"] = pair_results
 
         if binary_results is not None:
-            output_data["binary_search_results"] = {
-                "initial_count": len(binary_results.initial_params),
-                "critical_count": len(binary_results.critical_params),
-                "reduction_ratio": binary_results.reduction_ratio,
-                "critical_params": binary_results.critical_params,
-                "iterations": binary_results.iterations,
-                "search_log": binary_results.search_log,
-            }
+            output_data["binary_search_results"] = binary_results
+
+        if group_results is not None:
+            output_data["group_ablation_results"] = group_results
 
         if baseline_results is not None:
-            output_data["baseline_validation"] = {
-                "all_passed": baseline_results.all_passed,
-                "base_model": {
-                    "passed": baseline_results.base_model.passed,
-                    "harm_rate": baseline_results.base_model.harm_rate,
-                },
-                "safe_model": {
-                    "passed": baseline_results.safe_model.passed,
-                    "harm_rate": baseline_results.safe_model.harm_rate,
-                },
-                "known_pairs": [
-                    {
-                        "name": r.name,
-                        "passed": r.passed,
-                        "expected_harmful": r.expected_harmful,
-                        "actual_harmful": r.actual_harmful,
-                    }
-                    for r in baseline_results.known_pairs
-                ],
-            }
+            output_data["baseline_validation"] = baseline_results
 
         # Circuit analysis results
         if circuit_results is not None:

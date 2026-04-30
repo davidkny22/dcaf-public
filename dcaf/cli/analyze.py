@@ -21,18 +21,9 @@ Usage:
     # Cross-run analysis (find stable core across multiple runs)
     dcaf analyze --cross-run ./runs/run_001/ ./runs/run_002/
 
-    # Full analysis with ablation, SAE validation, verbose output
-    dcaf analyze -r ./runs/run_001/ --single-ablation --validate-sae --verbose -o results.json
+    # Full analysis with ablation and verbose output
+    dcaf analyze -r ./runs/run_001/ --single-ablation --verbose -o results.json
 """
-
-import logging
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
 
 from dcaf.cli._analyze import main
 

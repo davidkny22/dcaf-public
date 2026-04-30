@@ -221,7 +221,12 @@ def compute_cluster_metrics_from_directions(
 
     T_plus_indices = [sig_to_idx[s] for s in T_plus_signals if s in sig_to_idx]
     T_minus_indices = [sig_to_idx[s] for s in T_minus_signals if s in sig_to_idx]
-    baseline_index = sig_to_idx.get(baseline_signal, 0)
+    if baseline_signal not in sig_to_idx:
+        raise ValueError(
+            f"baseline_signal {baseline_signal!r} was not found in directions; "
+            "cannot compute baseline orthogonality"
+        )
+    baseline_index = sig_to_idx[baseline_signal]
 
     return compute_cluster_metrics(M, T_plus_indices, T_minus_indices, baseline_index)
 

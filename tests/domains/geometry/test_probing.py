@@ -133,7 +133,7 @@ class TestKernelLDA:
         # Compare to linear baseline
         lr = LogisticRegression(max_iter=1000, random_state=42)
         lr.fit(X_train, y_train)
-        linear_accuracy = lr.score(X_test, y_test)
+        _linear_accuracy = lr.score(X_test, y_test)
 
         # Kernel should produce reasonable accuracy (>= 0.5, better than random)
         assert kernel_accuracy >= 0.5, (

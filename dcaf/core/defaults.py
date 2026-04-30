@@ -86,25 +86,25 @@ DEFAULT_MISSING_CONFIDENCE: float = 0.5
 # CONFIDENCE THRESHOLDS
 # =============================================================================
 
-TAU_W_DEFAULT: float = 0.2
-"""Weight confidence threshold (exploratory default).
+TAU_W_DEFAULT: float = 0.3
+"""Weight confidence threshold (spec default; valid tuning range 0.3-0.5).
 CLI: --weight-confidence (analyze)"""
 
-TAU_A_DEFAULT: float = 0.2
-"""Activation confidence threshold (exploratory default).
+TAU_A_DEFAULT: float = 0.3
+"""Activation confidence threshold (spec default; valid tuning range 0.3-0.5).
 CLI: --activation-confidence (analyze)"""
 
-TAU_G_DEFAULT: float = 0.2
-"""Geometry confidence threshold (exploratory default).
+TAU_G_DEFAULT: float = 0.3
+"""Geometry confidence threshold (spec default; valid tuning range 0.3-0.5).
 CLI: --geometry-confidence (analyze)"""
 
-TAU_UNIFIED_DEFAULT: float = 0.2
-"""Triangulated confidence threshold (exploratory default)."""
+TAU_UNIFIED_DEFAULT: float = 0.3
+"""Unified candidate threshold (spec default)."""
 
 TAU_MIN: float = 0.3
 """Minimum recommended threshold (permissive)."""
 
-TAU_MAX: float = 0.7
+TAU_MAX: float = 0.5
 """Maximum recommended threshold (strict)."""
 
 
@@ -127,8 +127,8 @@ HARM_THRESHOLD: float = 0.5
 COHERENCE_THRESHOLD: float = 0.5
 """Coherence threshold for response quality."""
 
-CLASSIFICATION_THRESHOLD: float = 0.1
-"""Activation classification threshold."""
+CLASSIFICATION_THRESHOLD: float = 0.15
+"""Legacy functional impact threshold; matches TAU_ABS in the spec."""
 
 SEPARATION_RATIO: float = 2.0
 """Separation ratio for bidirectional detection."""
@@ -141,6 +141,9 @@ TRIPLE_BUDGET: int = 100
 
 SYNERGY_EPSILON: float = 0.05
 """Threshold for synergistic vs redundant interaction classification."""
+
+EPSILON_OPP: float = 0.1
+"""Opposition grouping threshold for interaction discovery."""
 
 
 # =============================================================================
@@ -164,6 +167,9 @@ TAU_GAP: float = 0.10
 
 TAU_ORPHAN: float = 0.6
 """High-confidence orphan threshold for targeted testing."""
+
+TAU_PPL: float = 0.1
+"""Maximum perplexity/teacher-forcing steering increase threshold."""
 
 
 # =============================================================================
@@ -252,6 +258,18 @@ PEAK_STABILITY_TOLERANCE: float = 0.05
 LRS_NONLINEAR_THRESHOLD: float = 0.4
 """Trigger nonlinear diagnostic suite when LRS falls below this value."""
 
+GEN_THRESHOLD: float = 0.8
+"""Minimum OOD/within predictivity ratio for generalizable directions."""
+
+GENERALIZATION_GAP_THRESHOLD: float = 0.1
+"""Maximum within-vs-OOD predictivity gap for generalizable directions."""
+
+OVERFITTING_GAP_THRESHOLD: float = 0.2
+"""Minimum within-vs-OOD predictivity gap that indicates overfitting."""
+
+PRED_OOD_STRONG_THRESHOLD: float = 0.7
+"""OOD predictivity threshold indicating a strong real concept direction."""
+
 
 # =============================================================================
 # NUMERICAL STABILITY
@@ -311,12 +329,12 @@ PERMISSIVE_THRESHOLDS: Dict[str, float] = {
 }
 
 EXPLORATORY_THRESHOLDS: Dict[str, float] = {
-    "tau_W": 0.2,
-    "tau_A": 0.2,
-    "tau_G": 0.2,
-    "tau_unified": 0.2,
+    "tau_W": TAU_W_DEFAULT,
+    "tau_A": TAU_A_DEFAULT,
+    "tau_G": TAU_G_DEFAULT,
+    "tau_unified": TAU_UNIFIED_DEFAULT,
 }
-"""Exploratory preset: maximally permissive, catches more candidates."""
+"""Exploratory preset: spec-compliant permissive defaults."""
 
 
 __all__ = [
@@ -358,6 +376,7 @@ __all__ = [
     "PAIR_BUDGET",
     "TRIPLE_BUDGET",
     "SYNERGY_EPSILON",
+    "EPSILON_OPP",
     # Functional Classification
     "R_STRICT_PRIMARY",
     "R_RELAXED_PRIMARY",
@@ -365,6 +384,7 @@ __all__ = [
     "TAU_ABS",
     "TAU_GAP",
     "TAU_ORPHAN",
+    "TAU_PPL",
     # Candidate Filtering
     "TOP_K_CANDIDATES",
     "PERCENTILE_FILTER",
@@ -389,6 +409,10 @@ __all__ = [
     "PEAK_STABILITY_TOLERANCE",
     # Nonlinear Diagnostics
     "LRS_NONLINEAR_THRESHOLD",
+    "GEN_THRESHOLD",
+    "GENERALIZATION_GAP_THRESHOLD",
+    "OVERFITTING_GAP_THRESHOLD",
+    "PRED_OOD_STRONG_THRESHOLD",
     # Numerical Stability
     "EPS_RMS",
     "EPS_GENERAL",

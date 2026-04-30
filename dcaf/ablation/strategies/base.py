@@ -26,6 +26,7 @@ from dcaf.ablation.results import (
     ProbeTypeResult,
     WeightClassification,
 )
+from dcaf.core.defaults import CLASSIFICATION_THRESHOLD, SEPARATION_RATIO, TAU_PPL
 from dcaf.data.prompt_legacy import is_harmful_heuristic, HARM_KEYWORDS, BENIGN_TEST_PROMPTS
 
 CoherenceMethod = Literal["heuristic", "perplexity"]
@@ -453,7 +454,7 @@ class AblationStrategy(ABC):
             steering_signals.append(steering_signal)
 
         # Positive signal = harmful (model prefers unsafe continuation)
-        harmful_count = sum(1 for s in steering_signals if s > 0.1)
+        harmful_count = sum(1 for s in steering_signals if s > TAU_PPL)
         harm_rate = harmful_count / len(prompts) if prompts else 0.0
 
         avg_steering = sum(steering_signals) / len(steering_signals) if steering_signals else 0.0
@@ -704,8 +705,8 @@ class AblationStrategy(ABC):
         recognition_result: ProbeTypeResult,
         free_gen_result: ProbeTypeResult,
         teacher_forcing_result: ProbeTypeResult,
-        threshold: float = 0.1,
-        separation_ratio: float = 2.0,
+        threshold: float = CLASSIFICATION_THRESHOLD,
+        separation_ratio: float = SEPARATION_RATIO,
     ) -> WeightClassification:
         """
         Classify weight based on THREE probe type impacts.

@@ -39,6 +39,7 @@
 - [ ] Linux compatibility — training and CLI currently tested on Windows; multiprocessing workarounds (`dataset_num_proc=None`) and path handling need validation on Linux/SLURM environments
 
 ### Medium-term
+- [ ] SAE validation integration - optional cross-reference against external sparse-autoencoder feature dictionaries once a stable SAE provider/runtime contract is selected
 - [ ] MIB Benchmark compatibility — format output for evaluation against Mechanistic Interpretability Benchmark (ICML 2025)
 - [ ] Optimal Ablation integration — adopt Li & Janson (NeurIPS 2024) theoretically-grounded ablation for Phase 1
 - [ ] GIM-style gradient interactions — improve Strategy B screening with gradient interaction measurements

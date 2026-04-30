@@ -18,12 +18,16 @@ Storage format:
 
 import json
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional, TYPE_CHECKING
 
 import torch
+
+if TYPE_CHECKING:
+    from dcaf.domains.activation.probe_set import ProbeSet
+    from dcaf.domains.activation.results import ActivationSnapshot
 
 
 @dataclass
@@ -45,6 +49,7 @@ class DeltaMetadata:
     probe_set_size: int = 0
     available_activation_snapshots: List[str] = field(default_factory=list)
     activation_config: Dict[str, Any] = field(default_factory=dict)
+    extra: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def create(
@@ -68,12 +73,20 @@ class DeltaMetadata:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to JSON-serializable dict."""
-        return asdict(self)
+        data = asdict(self)
+        extra = data.pop("extra", {})
+        data.update(extra)
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DeltaMetadata":
         """Create from dict (e.g., loaded from JSON)."""
-        return cls(**data)
+        field_names = {f.name for f in fields(cls)}
+        known = {k: v for k, v in data.items() if k in field_names and k != "extra"}
+        metadata = cls(**known)
+        metadata.extra.update(data.get("extra", {}))
+        metadata.extra.update({k: v for k, v in data.items() if k not in field_names})
+        return metadata
 
 
 class DeltaStore:
@@ -200,6 +213,13 @@ class DeltaStore:
 
         # Merge updates
         data.update(updates)
+        if self._metadata is not None:
+            field_names = {f.name for f in fields(DeltaMetadata)}
+            for key, value in updates.items():
+                if key in field_names and key != "extra":
+                    setattr(self._metadata, key, value)
+                else:
+                    self._metadata.extra[key] = value
 
         # Save back
         with open(self.metadata_path, "w") as f:
@@ -368,7 +388,7 @@ class DeltaStore:
         if not self.deltas_dir.exists():
             return []
 
-        return [p.stem for p in self.deltas_dir.glob("*.pt")]
+        return sorted(p.stem for p in self.deltas_dir.glob("*.pt"))
 
     def list_checkpoints(self) -> List[str]:
         """
@@ -380,7 +400,7 @@ class DeltaStore:
         if not self.checkpoints_dir.exists():
             return []
 
-        return [p.stem for p in self.checkpoints_dir.glob("*.pt")]
+        return sorted(p.stem for p in self.checkpoints_dir.glob("*.pt"))
 
     def list_activation_snapshots(self) -> List[str]:
         """
@@ -392,7 +412,7 @@ class DeltaStore:
         if not self.activations_dir.exists():
             return []
 
-        return [p.stem for p in self.activations_dir.glob("*.pt")]
+        return sorted(p.stem for p in self.activations_dir.glob("*.pt"))
 
     def validate_for_criteria(
         self,

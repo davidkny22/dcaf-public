@@ -9,10 +9,14 @@ from dcaf.core.defaults import (
     P_LRS, LAMBDA_CONTRASTIVE,
     W_DISCOVERY, EPSILON_TRI,
     TAU_W_DEFAULT, TAU_A_DEFAULT, TAU_G_DEFAULT, TAU_UNIFIED_DEFAULT,
-    TAU_EDGE, PAIR_BUDGET, TRIPLE_BUDGET, SYNERGY_EPSILON,
-    R_STRICT_PRIMARY, R_RELAXED_PRIMARY, R_AUX, TAU_ABS, TAU_GAP, TAU_ORPHAN,
+    TAU_EDGE, PAIR_BUDGET, TRIPLE_BUDGET, SYNERGY_EPSILON, EPSILON_OPP,
+    R_STRICT_PRIMARY, R_RELAXED_PRIMARY, R_AUX, TAU_ABS, TAU_GAP, TAU_ORPHAN, TAU_PPL,
     PEAK_EVAL_INTERVAL, PEAK_CONFIRMATION_WINDOW, PEAK_STABILITY_TOLERANCE,
     LRS_NONLINEAR_THRESHOLD, EPS_RMS,
+    NUM_TRAIN_EPOCHS, MAX_TRAIN_STEPS,
+    LEARNING_RATE_SFT, SIMPO_LEARNING_RATE, WARMUP_RATIO, MAX_GRAD_NORM,
+    SIMPO_BETA, SIMPO_BATCH_SIZE, SIMPO_GRAD_ACCUM,
+    SFT_BATCH_SIZE, SFT_GRAD_ACCUM,
 )
 
 
@@ -63,6 +67,7 @@ class DCAFConfig:
     pair_budget: int = PAIR_BUDGET
     triple_budget: int = TRIPLE_BUDGET
     synergy_epsilon: float = SYNERGY_EPSILON
+    epsilon_opp: float = EPSILON_OPP
     tau_orphan: float = TAU_ORPHAN
 
     # === §11.5: ADAPTIVE TIERED CLASSIFICATION ===
@@ -71,6 +76,7 @@ class DCAFConfig:
     r_aux: float = R_AUX
     tau_abs: float = TAU_ABS
     tau_gap: float = TAU_GAP
+    tau_ppl: float = TAU_PPL
 
     # === PEAK CHECKPOINT (Def 1.11) ===
     peak_eval_interval: int = PEAK_EVAL_INTERVAL
@@ -84,6 +90,22 @@ class DCAFConfig:
 
     # === NUMERICAL STABILITY ===
     eps_rms: float = EPS_RMS
+
+    # === TRAINING CLI / TRAINER CONTRACT ===
+    use_simpo: bool = True
+    learning_rate: float = LEARNING_RATE_SFT
+    simpo_learning_rate: float = SIMPO_LEARNING_RATE
+    simpo_beta: float = SIMPO_BETA
+    num_train_epochs: int = NUM_TRAIN_EPOCHS
+    max_steps: int = MAX_TRAIN_STEPS
+    warmup_ratio: float = WARMUP_RATIO
+    warmup_steps: int = 0
+    max_grad_norm: float = MAX_GRAD_NORM
+    use_peak_checkpoint: bool = True
+    batch_size: int = SIMPO_BATCH_SIZE
+    gradient_accumulation_steps: int = SIMPO_GRAD_ACCUM
+    sft_batch_size: int = SFT_BATCH_SIZE
+    sft_gradient_accumulation_steps: int = SFT_GRAD_ACCUM
 
 
 __all__ = ["DCAFConfig"]

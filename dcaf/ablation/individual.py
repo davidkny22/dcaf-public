@@ -16,6 +16,12 @@ from dataclasses import dataclass, field
 
 from dcaf.core.defaults import CLASSIFICATION_THRESHOLD
 
+PROBE_CLASSIFICATION_IDS = {
+    "recognition": "I_detect",
+    "free_generation": "I_decide",
+    "teacher_forcing": "I_eval",
+}
+
 
 @dataclass
 class ProbeImpact:
@@ -184,13 +190,6 @@ def compute_component_impact(
     """
     probe_impacts = {}
 
-    # Standard probe types
-    probe_mapping = {
-        "recognition": "I_detect",
-        "free_generation": "I_decide",
-        "teacher_forcing": "I_eval",
-    }
-
     I_detect = 0.0
     I_decide = 0.0
     I_eval = 0.0
@@ -208,11 +207,12 @@ def compute_component_impact(
         probe_impacts[probe_type] = probe_impact
 
         # Map to standard impact names
-        if probe_type == "recognition":
+        impact_id = PROBE_CLASSIFICATION_IDS.get(probe_type)
+        if impact_id == "I_detect":
             I_detect = probe_impact.impact
-        elif probe_type == "free_generation":
+        elif impact_id == "I_decide":
             I_decide = probe_impact.impact
-        elif probe_type == "teacher_forcing":
+        elif impact_id == "I_eval":
             I_eval = probe_impact.impact
 
     return ComponentImpact(
@@ -315,11 +315,7 @@ def rank_by_impact(
         )
 
     # Rank by specific probe
-    impact_key = {
-        "recognition": "I_detect",
-        "free_generation": "I_decide",
-        "teacher_forcing": "I_eval",
-    }.get(probe_type, probe_type)
+    impact_key = PROBE_CLASSIFICATION_IDS.get(probe_type, probe_type)
 
     return sorted(
         [(c, getattr(i, impact_key, 0.0)) for c, i in impacts.items()],
@@ -359,6 +355,7 @@ def get_impact_summary(
 
 
 __all__ = [
+    "PROBE_CLASSIFICATION_IDS",
     "ProbeImpact",
     "ComponentImpact",
     "compute_probe_impact",

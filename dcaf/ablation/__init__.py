@@ -1,88 +1,107 @@
-"""Ablation methodology and functional classification (§11, Def 11.1-11.27).
+"""Ablation methodology and functional classification (§11).
 
-Note: The Phase 2 seven-strategy classes (StrategyA-G) are defined in
-dcaf/ablation/interaction_strategies.py but cannot be imported as dcaf.ablation.strategies
-because that path resolves to the strategies/ package. Import them directly:
-
-    from dcaf.ablation import StrategyA_GraphAdjacent  (re-exported here)
-
-or via importlib if you need the module directly.
+The package initializer keeps import-time side effects low. Torch-backed
+runtime helpers are loaded lazily through ``__getattr__``.
 """
 
-# Re-export the 7 Phase 2 strategy classes from interaction_strategies.py via importlib
-import importlib.util as _ilu
-import os as _os
-_strat_path = _os.path.join(_os.path.dirname(__file__), "interaction_strategies.py")
-_strat_spec = _ilu.spec_from_file_location("dcaf.ablation._strategies_file", _strat_path)
-_strat_mod = _ilu.module_from_spec(_strat_spec)
-_strat_spec.loader.exec_module(_strat_mod)
-
-StrategyResult = _strat_mod.StrategyResult
-InteractionStrategy = _strat_mod.InteractionStrategy
-StrategyA_GraphAdjacent = _strat_mod.StrategyA_GraphAdjacent
-StrategyB_GradientScreening = _strat_mod.StrategyB_GradientScreening
-StrategyC_ActivationCorrelation = _strat_mod.StrategyC_ActivationCorrelation
-StrategyD_HierarchicalClustering = _strat_mod.StrategyD_HierarchicalClustering
-StrategyE_OppositionGrouping = _strat_mod.StrategyE_OppositionGrouping
-StrategyF_CrossLayerComposition = _strat_mod.StrategyF_CrossLayerComposition
-StrategyG_RandomSampling = _strat_mod.StrategyG_RandomSampling
-run_all_strategies = _strat_mod.run_all_strategies
-compute_discovery_count = _strat_mod.compute_discovery_count
-get_high_confidence_params = _strat_mod.get_high_confidence_params
-get_interaction_summary = _strat_mod.get_interaction_summary
-del _ilu, _os, _strat_path, _strat_spec, _strat_mod
-
-from dcaf.ablation.methods import ModelStateManager
 from dcaf.ablation.results import (
     AblationConfig,
     AblationResult,
-    ParamAblationResult,
     AblationResults,
-    PairAblationResult,
-    PairAblationResults,
-    BinarySearchResult,
     BaselineResult,
     BaselineValidationResults,
-    WeightClassification,
+    BinarySearchResult,
+    PairAblationResult,
+    PairAblationResults,
+    ParamAblationResult,
     ProbeTypeResult,
     ResponseCategory,
+    WeightClassification,
     short_param_name,
 )
-from dcaf.ablation.superadditivity import (
-    InteractionType,
-    InteractionRequirement,
-    SuperadditivityResult,
-    classify_interaction,
-    classify_interaction_requirement,
-    test_superadditivity,
-    test_pair_superadditivity,
-    batch_test_superadditivity,
-)
-from dcaf.ablation.classification import (
-    ComponentStatus,
-    FinalClassification,
-    classify_final,
-    classify_all_final,
-)
+
+_LAZY_EXPORTS = {
+    "ModelStateManager": ("dcaf.ablation.methods", "ModelStateManager"),
+    "InteractionType": ("dcaf.ablation.superadditivity", "InteractionType"),
+    "InteractionRequirement": ("dcaf.ablation.superadditivity", "InteractionRequirement"),
+    "SuperadditivityResult": ("dcaf.ablation.superadditivity", "SuperadditivityResult"),
+    "classify_interaction": ("dcaf.ablation.superadditivity", "classify_interaction"),
+    "classify_interaction_requirement": (
+        "dcaf.ablation.superadditivity",
+        "classify_interaction_requirement",
+    ),
+    "test_superadditivity": ("dcaf.ablation.superadditivity", "test_superadditivity"),
+    "test_pair_superadditivity": (
+        "dcaf.ablation.superadditivity",
+        "test_pair_superadditivity",
+    ),
+    "batch_test_superadditivity": (
+        "dcaf.ablation.superadditivity",
+        "batch_test_superadditivity",
+    ),
+    "ComponentStatus": ("dcaf.ablation.classification", "ComponentStatus"),
+    "FinalClassification": ("dcaf.ablation.classification", "FinalClassification"),
+    "classify_final": ("dcaf.ablation.classification", "classify_final"),
+    "classify_all_final": ("dcaf.ablation.classification", "classify_all_final"),
+    "InteractionStrategy": ("dcaf.ablation.interaction_strategies", "InteractionStrategy"),
+    "StrategyResult": ("dcaf.ablation.interaction_strategies", "StrategyResult"),
+    "StrategyA_GraphAdjacent": (
+        "dcaf.ablation.interaction_strategies",
+        "StrategyA_GraphAdjacent",
+    ),
+    "StrategyB_GradientScreening": (
+        "dcaf.ablation.interaction_strategies",
+        "StrategyB_GradientScreening",
+    ),
+    "StrategyC_ActivationCorrelation": (
+        "dcaf.ablation.interaction_strategies",
+        "StrategyC_ActivationCorrelation",
+    ),
+    "StrategyD_HierarchicalClustering": (
+        "dcaf.ablation.interaction_strategies",
+        "StrategyD_HierarchicalClustering",
+    ),
+    "StrategyE_OppositionGrouping": (
+        "dcaf.ablation.interaction_strategies",
+        "StrategyE_OppositionGrouping",
+    ),
+    "StrategyF_CrossLayerComposition": (
+        "dcaf.ablation.interaction_strategies",
+        "StrategyF_CrossLayerComposition",
+    ),
+    "StrategyG_RandomSampling": (
+        "dcaf.ablation.interaction_strategies",
+        "StrategyG_RandomSampling",
+    ),
+    "run_all_strategies": ("dcaf.ablation.interaction_strategies", "run_all_strategies"),
+    "compute_discovery_count": (
+        "dcaf.ablation.interaction_strategies",
+        "compute_discovery_count",
+    ),
+    "get_high_confidence_params": (
+        "dcaf.ablation.interaction_strategies",
+        "get_high_confidence_params",
+    ),
+    "get_interaction_summary": (
+        "dcaf.ablation.interaction_strategies",
+        "get_interaction_summary",
+    ),
+}
+
+
+def __getattr__(name: str):
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(name)
+
+    from importlib import import_module
+
+    module_name, attr_name = _LAZY_EXPORTS[name]
+    value = getattr(import_module(module_name), attr_name)
+    globals()[name] = value
+    return value
+
 
 __all__ = [
-    # Phase 2 seven strategies
-    "InteractionStrategy",
-    "StrategyResult",
-    "StrategyA_GraphAdjacent",
-    "StrategyB_GradientScreening",
-    "StrategyC_ActivationCorrelation",
-    "StrategyD_HierarchicalClustering",
-    "StrategyE_OppositionGrouping",
-    "StrategyF_CrossLayerComposition",
-    "StrategyG_RandomSampling",
-    "run_all_strategies",
-    "compute_discovery_count",
-    "get_high_confidence_params",
-    "get_interaction_summary",
-    # methods
-    "ModelStateManager",
-    # results
     "AblationConfig",
     "AblationResult",
     "ParamAblationResult",
@@ -96,18 +115,5 @@ __all__ = [
     "ProbeTypeResult",
     "ResponseCategory",
     "short_param_name",
-    # superadditivity
-    "InteractionType",
-    "InteractionRequirement",
-    "SuperadditivityResult",
-    "classify_interaction",
-    "classify_interaction_requirement",
-    "test_superadditivity",
-    "test_pair_superadditivity",
-    "batch_test_superadditivity",
-    # classification
-    "ComponentStatus",
-    "FinalClassification",
-    "classify_final",
-    "classify_all_final",
+    *_LAZY_EXPORTS.keys(),
 ]

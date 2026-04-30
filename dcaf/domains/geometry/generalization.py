@@ -10,7 +10,12 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor
 
-from dcaf.core.defaults import EPS_GENERAL
+from dcaf.core.defaults import (
+    EPS_GENERAL,
+    GEN_THRESHOLD,
+    GENERALIZATION_GAP_THRESHOLD,
+    OVERFITTING_GAP_THRESHOLD,
+)
 from .predictivity import compute_predictivity
 
 
@@ -172,7 +177,8 @@ def compute_generalization_simple(
 def is_generalizable(
     gen: float,
     gap: float,
-    gap_threshold: float = 0.1,
+    gen_threshold: float = GEN_THRESHOLD,
+    gap_threshold: float = GENERALIZATION_GAP_THRESHOLD,
 ) -> bool:
     """
     Check if direction captures generalizable concept.
@@ -180,17 +186,18 @@ def is_generalizable(
     Args:
         gen: Generalization score
         gap: Generalization gap
+        gen_threshold: Minimum acceptable OOD/within predictivity ratio
         gap_threshold: Maximum acceptable gap
 
     Returns:
         True if direction generalizes well
     """
-    return gap < gap_threshold
+    return gen >= gen_threshold and gap < gap_threshold
 
 
 def is_overfitting(
     gap: float,
-    gap_threshold: float = 0.2,
+    gap_threshold: float = OVERFITTING_GAP_THRESHOLD,
 ) -> bool:
     """
     Check if direction overfits to template artifacts.

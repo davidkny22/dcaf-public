@@ -23,7 +23,7 @@ Run/delta/checkpoint names follow the spec-aligned naming convention:
   checkpoint key → "checkpoint_t1", ..., "checkpoint_t11", "base"
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, List, Optional, Set, Any, Callable, TYPE_CHECKING
 import logging
 
@@ -163,15 +163,19 @@ def build_variant(
     modifiers: str = "",
     target: bool = True,
     opposite: bool = True,
+    no_simpo: bool = False,
 ) -> DCAFVariantConfig:
     """Build a variant configuration from composable flags.
 
     Args:
         modifiers: String of modifier flags (e.g. "A", "SAN", "SCAN").
             S = SFT, C = Cumulative, A = Anti, N = Negated.
-            PO (preference optimization) is always included automatically.
+            PO (preference optimization) is always included automatically
+            unless no_simpo is set.
         target: Include T+ (target-side) runs.  Default True.
         opposite: Include T- (opposite-side) runs.  Default True.
+        no_simpo: Replace PO with SFT as the core signal. Uses SFT-only
+            training (t2/t7) instead of preference optimization (t1/t6).
 
     Returns:
         DCAFVariantConfig with the assembled training runs.
@@ -181,26 +185,36 @@ def build_variant(
         build_variant("A")                           -> PO + Anti, both sides + t11
         build_variant("A", target=True, opposite=False) -> PO + Anti, T+ only + t11
         build_variant("SCAN")                        -> All flags, both sides + t11
+        build_variant(no_simpo=True)                 -> SFT both sides + t11
     """
     if not target and not opposite:
         raise ValueError("At least one of target or opposite must be True")
 
     runs = list(BASELINE_RUNS)  # t11 always runs
 
-    # PO always active; resolve modifier dependencies
-    active = ALWAYS_ACTIVE | set(modifiers.upper())
-    for mod, dep in MODIFIER_DEPS.items():
+    core = {"S"} if no_simpo else ALWAYS_ACTIVE
+    active = core | set(modifiers.upper())
+    deps = {"C": "S", "N": "S"} if no_simpo else MODIFIER_DEPS
+    for mod, dep in deps.items():
         if mod in active:
             active.add(dep)
+
+    target_runs = TARGET_RUNS
+    opposite_runs = OPPOSITE_RUNS
+    if no_simpo:
+        target_runs = dict(TARGET_RUNS)
+        opposite_runs = dict(OPPOSITE_RUNS)
+        target_runs["N"] = replace(TARGET_RUNS["N"], restore_from="checkpoint_t2")
+        opposite_runs["N"] = replace(OPPOSITE_RUNS["N"], restore_from="checkpoint_t7")
 
     # Add runs in execution order (respects restore_from dependency chains)
     for flag in RUN_ORDER:
         if flag not in active:
             continue
-        if target and flag in TARGET_RUNS:
-            runs.append(TARGET_RUNS[flag])
-        if opposite and flag in OPPOSITE_RUNS:
-            runs.append(OPPOSITE_RUNS[flag])
+        if target and flag in target_runs:
+            runs.append(target_runs[flag])
+        if opposite and flag in opposite_runs:
+            runs.append(opposite_runs[flag])
 
     return DCAFVariantConfig(name=_make_name(active, target, opposite), runs=runs)
 
@@ -287,6 +301,10 @@ class TrainingOrchestrator:
 
         config = variant_config
         self._current_variant = config.name
+        if self._activation_capture_enabled:
+            self._delta_store = delta_store
+            if self._probe_set is not None:
+                delta_store.save_probe_set(self._probe_set)
 
         logger.info("=" * 70)
         logger.info(f"Running {config.name}")
@@ -297,6 +315,8 @@ class TrainingOrchestrator:
 
         # Save base checkpoint
         self.ckpt.save_checkpoint("base", training_phase="initial")
+        base_weights = self.ckpt.get_checkpoint("base").weights
+        delta_store.save_checkpoint("base", base_weights)
 
         # Track phase metrics (e.g. refusal rates)
         phase_metrics: Dict[str, Any] = {}
@@ -333,8 +353,8 @@ class TrainingOrchestrator:
                 delta_store.save_delta(run.delta_name, delta)
                 logger.info(f"  Saved delta: {run.delta_name}")
 
-            # Save checkpoints needed as source for negated training
-            if run.save_as in ("checkpoint_t1", "checkpoint_t6"):
+            # Persist every phase checkpoint advertised by the run metadata.
+            if run.save_as:
                 weights = self.ckpt.get_checkpoint(run.save_as).weights
                 delta_store.save_checkpoint(run.save_as, weights)
                 logger.info(f"  Saved checkpoint: {run.save_as}")
@@ -452,6 +472,7 @@ class TrainingOrchestrator:
                 max_length=self._activation_config["max_length"],
                 batch_size=self._activation_config["batch_size"],
                 enable_free_generation=self._activation_config["enable_free_generation"],
+                max_new_tokens=self._activation_config["free_gen_max_tokens"],
                 show_progress=False,
             )
 
@@ -506,51 +527,153 @@ class TrainingOrchestrator:
 
         # Create a temporary trainer instance for this run
         trainer = DCAFTrainer(self.model, self.tokenizer, self.config)
+        use_simpo = self.config.use_simpo
+
+        def require_dataset(name: str, dataset):
+            if dataset is None:
+                raise ValueError(f"{name} is required for {run.run_type}")
+            return dataset
 
         # Execute based on run type (spec-aligned signal names)
         if run.run_type == "t1_prefopt_target":
-            trainer.train_principle_simpo(
-                "_t1", safe_simpo_dataset, epochs=epochs, max_steps=max_steps
-            )
+            if use_simpo:
+                trainer.train_principle_simpo(
+                    "_t1",
+                    require_dataset("safe_simpo_dataset", safe_simpo_dataset),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
+            else:
+                trainer.train_sft(
+                    "_t1",
+                    require_dataset("safe_sft_dataloader", safe_sft_dataloader),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
         elif run.run_type == "t6_prefopt_opposite":
-            trainer.train_principle_simpo(
-                "_t6", unsafe_simpo_dataset, epochs=epochs, max_steps=max_steps
-            )
+            if use_simpo:
+                trainer.train_principle_simpo(
+                    "_t6",
+                    require_dataset("unsafe_simpo_dataset", unsafe_simpo_dataset),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
+            else:
+                trainer.train_sft(
+                    "_t6",
+                    require_dataset("unsafe_sft_dataloader", unsafe_sft_dataloader),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
         elif run.run_type == "t2_sft_target":
             trainer.train_sft(
-                "_t2", safe_sft_dataloader, epochs=epochs, max_steps=max_steps
+                "_t2",
+                require_dataset("safe_sft_dataloader", safe_sft_dataloader),
+                epochs=epochs,
+                max_steps=max_steps,
             )
         elif run.run_type == "t7_sft_opposite":
             trainer.train_sft(
-                "_t7", unsafe_sft_dataloader, epochs=epochs, max_steps=max_steps
+                "_t7",
+                require_dataset("unsafe_sft_dataloader", unsafe_sft_dataloader),
+                epochs=epochs,
+                max_steps=max_steps,
             )
         elif run.run_type == "t3_cumulative_target":
-            trainer.train_principle_simpo(
-                "_t3", safe_simpo_dataset, epochs=epochs, max_steps=max_steps
-            )
+            if use_simpo:
+                trainer.train_principle_simpo(
+                    "_t3",
+                    require_dataset("safe_simpo_dataset", safe_simpo_dataset),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
+            else:
+                trainer.train_sft(
+                    "_t3",
+                    require_dataset("safe_sft_dataloader", safe_sft_dataloader),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
         elif run.run_type == "t8_cumulative_opposite":
-            trainer.train_principle_simpo(
-                "_t8", unsafe_simpo_dataset, epochs=epochs, max_steps=max_steps
-            )
+            if use_simpo:
+                trainer.train_principle_simpo(
+                    "_t8",
+                    require_dataset("unsafe_simpo_dataset", unsafe_simpo_dataset),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
+            else:
+                trainer.train_sft(
+                    "_t8",
+                    require_dataset("unsafe_sft_dataloader", unsafe_sft_dataloader),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
         elif run.run_type == "t4_anti_target":
-            trainer.train_anti_simpo(
-                "_t4", unsafe_simpo_dataset, epochs=epochs, max_steps=max_steps
-            )
+            if use_simpo:
+                trainer.train_anti_simpo(
+                    "_t4",
+                    require_dataset("unsafe_simpo_dataset", unsafe_simpo_dataset),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
+            else:
+                trainer.train_anti_sft(
+                    "_t4",
+                    require_dataset("unsafe_sft_dataloader", unsafe_sft_dataloader),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
         elif run.run_type == "t9_anti_opposite":
-            trainer.train_anti_simpo(
-                "_t9", safe_simpo_dataset, epochs=epochs, max_steps=max_steps
-            )
+            if use_simpo:
+                trainer.train_anti_simpo(
+                    "_t9",
+                    require_dataset("safe_simpo_dataset", safe_simpo_dataset),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
+            else:
+                trainer.train_anti_sft(
+                    "_t9",
+                    require_dataset("safe_sft_dataloader", safe_sft_dataloader),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
         elif run.run_type == "t5_negated_target":
-            trainer.train_negated_simpo(
-                "_t5", safe_simpo_dataset, epochs=epochs, max_steps=max_steps
-            )
+            if use_simpo:
+                trainer.train_negated_simpo(
+                    "_t5",
+                    require_dataset("safe_simpo_dataset", safe_simpo_dataset),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
+            else:
+                trainer.train_anti_sft(
+                    "_t5",
+                    require_dataset("safe_sft_dataloader", safe_sft_dataloader),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
         elif run.run_type == "t10_negated_opposite":
-            trainer.train_negated_simpo(
-                "_t10", unsafe_simpo_dataset, epochs=epochs, max_steps=max_steps
-            )
+            if use_simpo:
+                trainer.train_negated_simpo(
+                    "_t10",
+                    require_dataset("unsafe_simpo_dataset", unsafe_simpo_dataset),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
+            else:
+                trainer.train_anti_sft(
+                    "_t10",
+                    require_dataset("unsafe_sft_dataloader", unsafe_sft_dataloader),
+                    epochs=epochs,
+                    max_steps=max_steps,
+                )
         elif run.run_type == "t11_baseline":
             trainer.train_language_baseline(
-                language_dataloader, epochs=epochs, max_steps=max_steps
+                require_dataset("language_dataloader", language_dataloader),
+                epochs=epochs,
+                max_steps=max_steps,
             )
         else:
             raise ValueError(f"Unknown run type: {run.run_type!r}")

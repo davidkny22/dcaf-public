@@ -41,15 +41,15 @@ LAYER_PATTERNS = [
 ]
 
 COMPONENT_PATTERNS = {
-    "attention": [
-        r"attention", r"attn", r"self_attn",
-        r"query", r"key", r"value", r"q_proj", r"k_proj", r"v_proj",
-        r"dense", r"out_proj", r"c_attn", r"c_proj",
-    ],
     "mlp": [
         r"mlp", r"feed_forward", r"ffn",
         r"fc1", r"fc2", r"dense_h_to_4h", r"dense_4h_to_h",
         r"c_fc", r"gate_proj", r"up_proj", r"down_proj",
+    ],
+    "attention": [
+        r"attention", r"attn", r"self_attn",
+        r"query", r"key", r"value", r"q_proj", r"k_proj", r"v_proj",
+        r"out_proj", r"c_attn", r"c_proj",
     ],
 }
 

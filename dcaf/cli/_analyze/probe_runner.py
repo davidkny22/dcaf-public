@@ -12,6 +12,8 @@ import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
+from dcaf.core.defaults import ATTENTION_WEIGHT, TAU_EDGE
+
 logger = logging.getLogger(__name__)
 
 
@@ -20,12 +22,13 @@ def run_probe_analysis(
     matching_params: List[str],
     model_name: str,
     cluster_method: str = "disjoint",
-    edge_threshold: float = 0.1,
-    attention_weight: float = 0.3,
+    edge_threshold: float = TAU_EDGE,
+    attention_weight: float = ATTENTION_WEIGHT,
     probe_type: str = "both",
     probe_size: int = 100,
     category: Optional[str] = None,
     weight_classifications: Optional[Dict[str, Any]] = None,
+    device: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Run probe analysis on DCAF-identified weight candidates.
@@ -44,6 +47,7 @@ def run_probe_analysis(
         probe_size: Number of probe prompts (default: 100)
         category: Harm category for probes (default: training run's category, or all)
         weight_classifications: Optional weight classifications from multi-probe ablation
+        device: Device to use
 
     Returns:
         Circuit analysis results dict, or None if unavailable
@@ -75,7 +79,7 @@ def run_probe_analysis(
     logger.info(f"Attention weight: {attention_weight}")
     logger.info("")
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load delta store and metadata
     from dcaf.storage.delta_store import DeltaStore
@@ -115,11 +119,22 @@ def run_probe_analysis(
     available_deltas = delta_store.list_deltas()
     safety_delta_name = next(
         (d for d in available_deltas if "t1_prefopt_target" in d),
-        next((d for d in available_deltas if "target" in d),
+        next((d for d in available_deltas if "t2_sft_target" in d),
+             next((d for d in available_deltas
+                   if "target" in d and "anti" not in d and "negated" not in d),
              next((d for d in available_deltas if "safe" in d), None))
     )
+    )
     if not safety_delta_name:
-        raise ValueError(f"No target delta found. Available: {available_deltas}")
+        logger.error(f"No target delta found. Available: {available_deltas}")
+        del model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        return {
+            "error": "No target delta found",
+            "available_deltas": available_deltas,
+        }
 
     logger.info(f"Using safety delta: {safety_delta_name}")
     safety_delta = delta_store.load_delta(safety_delta_name)
@@ -278,7 +293,12 @@ def run_probe_analysis(
 
     classifier = RefusalClassifier()
 
-    def measure_safety_fn() -> float:
+    def measure_safety_fn(
+        model=model,
+        tokenizer=tokenizer,
+        classifier=classifier,
+        probe_set=probe_set,
+    ) -> float:
         """Measure safety impact by running harmful prompts and counting refusals."""
         refusal_count = 0
         total_count = 0
@@ -300,7 +320,7 @@ def run_probe_analysis(
             )
 
             # Classify response
-            result = classifier.classify(prompt, response)
+            result = classifier.classify(response, prompt)
 
             # Count refusals (REFUSE + AVOID)
             if result.is_refusal:

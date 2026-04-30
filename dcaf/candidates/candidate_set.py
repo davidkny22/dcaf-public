@@ -282,9 +282,10 @@ def create_validated_set(
         c_a = activation_confidences.get(component) if component else None
         c_g = geometry_confidences.get(component) if component else None
 
-        # Check thresholds
-        passes_a = c_a is None or c_a >= config.tau_A
-        passes_g = c_g is None or c_g >= config.tau_G
+        # If a domain was not run, its confidence map is empty and should not
+        # filter. If it was run, missing component evidence is a failed join.
+        passes_a = not activation_confidences or (c_a is not None and c_a >= config.tau_A)
+        passes_g = not geometry_confidences or (c_g is not None and c_g >= config.tau_G)
 
         if passes_a and passes_g:
             candidates[param_id] = CandidateInfo(

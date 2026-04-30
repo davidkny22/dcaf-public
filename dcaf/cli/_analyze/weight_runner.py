@@ -22,6 +22,7 @@ from dcaf.domains.weight import (
     is_bidirectional,
 )
 from dcaf.arch.transformer import should_exclude_param
+from dcaf.core.defaults import TAU_W_DEFAULT
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ def _classify_cluster(name: str) -> str:
 
 def run_weight_analysis(
     run_path: Path,
-    tau_W: float = 0.5,
+    tau_W: float = TAU_W_DEFAULT,
     top_k: int = 100,
     verbose: bool = False,
 ) -> Dict[str, Any]:
@@ -111,6 +112,7 @@ def run_weight_analysis(
     for d in deltas.values():
         all_params.update(d.keys())
     param_names = sorted(all_params)
+    param_to_index = {name: idx for idx, name in enumerate(param_names)}
 
     # Build RMS norms per signal per param: {signal_name: {param_name: rms}}
     rms_by_signal: Dict[str, Dict[str, float]] = {}
@@ -214,24 +216,35 @@ def run_weight_analysis(
                 f"bi={'Y' if r['bidirectional'] else 'N'} {short}"
             )
 
+    def _candidate_record(pname: str, r: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "index": param_to_index[pname],
+            "param_name": pname,
+            "C_W": r["C_W"],
+            "opp_degree": r["opp_degree"],
+            "bidirectional": r["bidirectional"],
+            "signal_presence": r["signal_presence"],
+            "baseline_passed": r["baseline_passed"],
+            "contributing_signals": r["contributing_signals"],
+            "layer": r["layer"],
+        }
+
     return {
         "total_params": summary["total_params"],
         "passing_threshold": len(passing),
         "threshold": tau_W,
         "summary": summary,
+        "scores_by_param": {
+            param_to_index[pname]: r["C_W"] for pname, r in sorted_results
+        },
+        "param_index_to_name": {
+            param_to_index[pname]: pname for pname, _ in sorted_results
+        },
+        "all_candidates": [
+            _candidate_record(pname, r) for pname, r in sorted_results
+        ],
         "top_candidates": [
-            {
-                "index": i,
-                "param_name": pname,
-                "C_W": r["C_W"],
-                "opp_degree": r["opp_degree"],
-                "bidirectional": r["bidirectional"],
-                "signal_presence": r["signal_presence"],
-                "baseline_passed": r["baseline_passed"],
-                "contributing_signals": r["contributing_signals"],
-                "layer": r["layer"],
-            }
-            for i, (pname, r) in enumerate(top_candidates)
+            _candidate_record(pname, r) for pname, r in top_candidates
         ],
     }
 

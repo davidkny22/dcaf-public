@@ -12,6 +12,11 @@ import math
 from dcaf.core.defaults import P_LRS, EPSILON_TRI
 
 
+def _clamp_unit(value: float) -> float:
+    """Clamp a scalar metric into the unit interval before confidence aggregation."""
+    return max(0.0, min(1.0, float(value)))
+
+
 @dataclass
 class LRSBreakdown:
     """
@@ -91,8 +96,9 @@ def power_mean(
     if len(values) != len(weights):
         raise ValueError("values and weights must have same length")
 
-    # Add epsilon for smoothing
-    smoothed = [x + epsilon for x in values]
+    # Metrics may be signed upstream; power means with fractional p require
+    # nonnegative inputs. Clamp before smoothing to preserve a valid score.
+    smoothed = [_clamp_unit(x) + epsilon for x in values]
 
     # Compute weighted power sum
     numerator = sum(w * (x ** p) for w, x in zip(weights, smoothed))
@@ -144,7 +150,7 @@ def compute_lrs(
         LRSResult with score and breakdown
     """
     # Normalize predictivity gain: (1 + Δ_pred) / 2
-    predictivity_gain_norm = (1.0 + predictivity_gain) / 2.0
+    predictivity_gain_norm = _clamp_unit((1.0 + predictivity_gain) / 2.0)
 
     # Default uniform weights
     if weights is None:
@@ -152,11 +158,11 @@ def compute_lrs(
 
     # Build component list
     values = [
-        coh_plus,
-        coh_minus,
-        opposition,
-        orthogonality,
-        confound_independence,
+        _clamp_unit(coh_plus),
+        _clamp_unit(coh_minus),
+        _clamp_unit(opposition),
+        _clamp_unit(orthogonality),
+        _clamp_unit(confound_independence),
         predictivity_gain_norm,
     ]
 
@@ -164,11 +170,11 @@ def compute_lrs(
     lrs = power_mean(values, weights, p, epsilon)
 
     breakdown = LRSBreakdown(
-        coh_plus=coh_plus,
-        coh_minus=coh_minus,
-        opposition=opposition,
-        orthogonality=orthogonality,
-        confound_independence=confound_independence,
+        coh_plus=values[0],
+        coh_minus=values[1],
+        opposition=values[2],
+        orthogonality=values[3],
+        confound_independence=values[4],
         predictivity_gain_norm=predictivity_gain_norm,
         weights=weights,
     )

@@ -32,7 +32,8 @@ class GroupAblationResult(AblationResult):
         return self.coherent and self.safety_broken
 
     def to_dict(self) -> dict:
-        return {
+        data = super().to_dict()
+        data.update({
             "param_names": self.param_names,
             "param_count": len(self.param_names),
             "safety_broken": self.safety_broken,
@@ -42,7 +43,8 @@ class GroupAblationResult(AblationResult):
             "coherent": self.coherent,
             "coherence_score": self.coherence_score,
             "ablation_validated": self.ablation_validated,
-        }
+        })
+        return data
 
 
 class GroupAblation(AblationStrategy):

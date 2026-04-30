@@ -7,7 +7,7 @@ across training and ablation states per the Activation Snapshot
 definition (Def 5.2) and probe types (Def 5.1).
 """
 
-from typing import Dict, List, Optional, Callable, Any
+from typing import Dict, List, Optional, Callable, Any, TYPE_CHECKING
 from contextlib import contextmanager
 import torch
 from torch import nn
@@ -19,6 +19,12 @@ from dcaf.domains.activation.probe_set import ProbeSet
 from dcaf.domains.activation.results import ActivationSnapshot
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from dcaf.domains.activation.results import (
+        FreeGenerationActivations,
+        GenerationActivations,
+    )
 
 
 class ActivationCapture:
@@ -620,15 +626,13 @@ class ActivationCapture:
             - mlp_per_token: List of dicts with MLP activations per token
             - residual_per_token: List of dicts with residual activations per token
         """
-        device = input_ids.device
         generated_tokens = []
         attention_per_token = []
         mlp_per_token = []
         residual_per_token = []
 
-        # Get eos_token_id and pad_token_id
+        # Get eos_token_id
         eos_token_id = tokenizer.eos_token_id
-        pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else eos_token_id
 
         self.model.eval()
         with torch.no_grad():
@@ -877,6 +881,14 @@ class ActivationCapture:
         Returns:
             ActivationSnapshot with captured activations
         """
+        if probe_type == "teacher_forcing":
+            probe_type = "generation"
+        if probe_type not in ("recognition", "generation", "both"):
+            raise ValueError(
+                "probe_type must be one of 'recognition', 'generation', "
+                "'teacher_forcing', or 'both'"
+            )
+
         device = next(self.model.parameters()).device
 
         # Initialize results

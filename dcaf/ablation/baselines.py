@@ -283,10 +283,14 @@ class BaselineValidator:
         """Count harmful responses using classifier or heuristic."""
         if self.classifier is not None:
             try:
-                return sum(
-                    1 for r in responses
-                    if self.classifier(r).lower() == "comply"
-                )
+                harmful_count = 0
+                for response in responses:
+                    result = self.classifier(response)
+                    category = getattr(result, "category", result)
+                    category_value = getattr(category, "value", category)
+                    if str(category_value).lower() == "comply":
+                        harmful_count += 1
+                return harmful_count
             except Exception as e:
                 logger.debug(f"Classifier failed, falling back to heuristic: {e}")
 

@@ -36,14 +36,40 @@ from enum import Enum
 
 logger = logging.getLogger(__name__)
 
-# Try to import transformers
-try:
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    import torch
+AutoModelForCausalLM = None
+AutoTokenizer = None
+torch = None
+TRANSFORMERS_AVAILABLE = None
+_TRANSFORMERS_IMPORT_ERROR = None
+
+
+def _load_transformer_deps() -> bool:
+    """Load torch/transformers only when an LLM classifier is constructed."""
+    global AutoModelForCausalLM, AutoTokenizer, torch
+    global TRANSFORMERS_AVAILABLE, _TRANSFORMERS_IMPORT_ERROR
+
+    if TRANSFORMERS_AVAILABLE is not None:
+        return TRANSFORMERS_AVAILABLE
+
+    try:
+        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
+        from transformers import AutoTokenizer as _AutoTokenizer
+        import torch as _torch
+    except ImportError as exc:
+        AutoModelForCausalLM = None
+        AutoTokenizer = None
+        torch = None
+        TRANSFORMERS_AVAILABLE = False
+        _TRANSFORMERS_IMPORT_ERROR = exc
+        logger.warning("transformers/torch not available for refusal classification")
+        return False
+
+    AutoModelForCausalLM = _AutoModelForCausalLM
+    AutoTokenizer = _AutoTokenizer
+    torch = _torch
     TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    TRANSFORMERS_AVAILABLE = False
-    logger.warning("transformers not available for refusal classification")
+    _TRANSFORMERS_IMPORT_ERROR = None
+    return True
 
 
 class ResponseCategory(Enum):
@@ -118,19 +144,22 @@ class RefusalClassifier:
         Args:
             method: Classification method (default: "llm")
             model_name: LLM model to use (default: Llama-3.1-8B-Instruct)
-            device: Device for model
+            device: Device for model. Defaults to "auto" without probing CUDA.
             use_nli: Ignored, kept for backward compatibility
             load_in_8bit: Use 8-bit quantization (default: True, requires bitsandbytes)
             load_in_4bit: Use 4-bit quantization (requires bitsandbytes)
         """
         self.method = method
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or "auto"
         self.model = None
         self.tokenizer = None
         self.model_name = None
 
-        if not TRANSFORMERS_AVAILABLE:
-            logger.warning("transformers not available, classifier will not work")
+        if not _load_transformer_deps():
+            logger.warning(
+                "transformers/torch not available, classifier will not work: %s",
+                _TRANSFORMERS_IMPORT_ERROR,
+            )
             return
 
         # Determine model to load
@@ -168,7 +197,8 @@ class RefusalClassifier:
                     except ImportError:
                         logger.warning("bitsandbytes not available, using bfloat16")
                         load_kwargs["torch_dtype"] = torch.bfloat16
-                        load_kwargs["device_map"] = "auto" if self.device == "cuda" else None
+                        if self.device in {"auto", "cuda"}:
+                            load_kwargs["device_map"] = "auto"
                 elif load_in_8bit:
                     try:
                         from transformers import BitsAndBytesConfig
@@ -180,11 +210,15 @@ class RefusalClassifier:
                     except ImportError:
                         logger.warning("bitsandbytes not available, using bfloat16")
                         load_kwargs["torch_dtype"] = torch.bfloat16
-                        load_kwargs["device_map"] = "auto" if self.device == "cuda" else None
+                        if self.device in {"auto", "cuda"}:
+                            load_kwargs["device_map"] = "auto"
                 else:
                     # Use bfloat16 for Llama models (better precision than float16)
-                    load_kwargs["torch_dtype"] = torch.bfloat16 if self.device == "cuda" else torch.float32
-                    load_kwargs["device_map"] = "auto" if self.device == "cuda" else None
+                    load_kwargs["torch_dtype"] = (
+                        torch.bfloat16 if self.device in {"auto", "cuda"} else torch.float32
+                    )
+                    if self.device in {"auto", "cuda"}:
+                        load_kwargs["device_map"] = "auto"
 
                 self.model = AutoModelForCausalLM.from_pretrained(
                     candidate_model,
@@ -192,7 +226,7 @@ class RefusalClassifier:
                     **load_kwargs
                 )
 
-                if self.device != "cuda" and "device_map" not in load_kwargs:
+                if self.device not in {"auto", "cuda"} and "device_map" not in load_kwargs:
                     self.model = self.model.to(self.device)
 
                 self.model.eval()
@@ -383,6 +417,11 @@ Answer YES or NO:"""
         """Classify multiple responses."""
         if prompts is None:
             prompts = [None] * len(responses)
+        elif len(prompts) != len(responses):
+            raise ValueError(
+                f"responses and prompts must have same length "
+                f"({len(responses)} != {len(prompts)})"
+            )
         return [self.classify(r, p) for r, p in zip(responses, prompts)]
 
     def get_refusal_rate(

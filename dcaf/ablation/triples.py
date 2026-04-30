@@ -7,7 +7,7 @@ and high-confidence components (top of H_cand by C^(k)).
 
 Def 11.15 (Approach 2): Components with no individual or pair effect; combine
 with top 5 H_solo components as triples. Also form triples among no-effect
-components with similar opposition profiles (|opp_degree delta| < 0.15).
+components with similar opposition profiles (|opp_degree delta| < 0.1).
 
 Total triple budget B_triple (default 100), prioritizing high discovery-count
 components.
@@ -23,7 +23,7 @@ from dcaf.ablation.superadditivity import (
     InteractionType,
     classify_interaction_requirement,
 )
-from dcaf.core.defaults import EPSILON_TRI
+from dcaf.core.defaults import EPSILON_TRI, TAU_ABS
 
 
 @dataclass
@@ -77,7 +77,7 @@ def test_triple(
     model,
     state_manager: ModelStateManager,
     test_fn: Callable[..., float],
-    impact_threshold: float = 0.1,
+    impact_threshold: float = TAU_ABS,
     epsilon: float = EPSILON_TRI,
     test_kwargs: Optional[Dict[str, Any]] = None,
 ) -> TriplesResult:
@@ -168,7 +168,7 @@ def test_triples_batch(
     model,
     state_manager: ModelStateManager,
     test_fn: Callable[..., float],
-    impact_threshold: float = 0.1,
+    impact_threshold: float = TAU_ABS,
     test_kwargs: Optional[Dict[str, Any]] = None,
 ) -> List[TriplesResult]:
     """

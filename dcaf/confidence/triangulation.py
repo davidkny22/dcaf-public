@@ -16,8 +16,9 @@ Also implements domain disagreement and deviation analysis (§13):
   dev_d = C_d - C_mean
 """
 
-from typing import Dict, Optional, List, Any
 from dataclasses import dataclass
+import math
+from typing import Dict, Optional, List, Any
 
 from dcaf.core.defaults import (
     W_DISCOVERY, EPSILON_TRI, DEFAULT_MISSING_CONFIDENCE, TAU_UNIFIED_DEFAULT,
@@ -142,20 +143,21 @@ def compute_domain_contribution(
     eps = config.epsilon
     w = config.weight_power
 
-    # Compute log contributions (since formula is multiplicative)
-    log_w = w * (C_W + eps)
-    log_a = (C_A + eps)
-    log_g = (C_G + eps)
+    # Decompose the multiplicative formula in log space:
+    # log(C_base) is proportional to w*log(C_W+eps)+log(C_A+eps)+log(C_G+eps).
+    log_w = w * math.log(max(C_W + eps, eps))
+    log_a = math.log(max(C_A + eps, eps))
+    log_g = math.log(max(C_G + eps, eps))
 
-    total = log_w + log_a + log_g
+    total = abs(log_w) + abs(log_a) + abs(log_g)
 
     if total <= 0:
         return {"weight": 0.33, "activation": 0.33, "geometry": 0.34}
 
     return {
-        "weight": log_w / total,
-        "activation": log_a / total,
-        "geometry": log_g / total,
+        "weight": abs(log_w) / total,
+        "activation": abs(log_a) / total,
+        "geometry": abs(log_g) / total,
     }
 
 

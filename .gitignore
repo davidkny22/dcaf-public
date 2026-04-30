@@ -23,5 +23,10 @@ runs/
 .claude/
 CLAUDE.md
 docs/.archive/
+docs/superpowers/
+docs/*.aux
+docs/*.blg
+docs/*.out
+docs/*.toc
 test_e2e_output.json
 docs/research_notes.md

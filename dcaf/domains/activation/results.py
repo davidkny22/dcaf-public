@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 import torch
 
+from dcaf.core.defaults import TAU_EDGE
+
 
 @dataclass
 class GenerationActivations:
@@ -363,7 +365,7 @@ class ActivationDelta:
                 magnitude = torch.norm(diff).item() / diff.numel() ** 0.5
                 self._mlp_neuron_changes[neuron_name] = magnitude
 
-    def get_changed_heads(self, threshold: float = 0.1) -> List[str]:
+    def get_changed_heads(self, threshold: float = TAU_EDGE) -> List[str]:
         """
         Get attention heads that changed above threshold.
 
@@ -379,7 +381,7 @@ class ActivationDelta:
             if change > threshold
         ]
 
-    def get_changed_neurons(self, threshold: float = 0.1) -> List[str]:
+    def get_changed_neurons(self, threshold: float = TAU_EDGE) -> List[str]:
         """
         Get MLP neurons that changed above threshold.
 

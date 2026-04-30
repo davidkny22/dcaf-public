@@ -19,8 +19,6 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set
 
-import torch
-
 from dcaf.core.config import DCAFConfig
 
 logger = logging.getLogger(__name__)
@@ -33,7 +31,7 @@ class DCAFOrchestrator:
         orchestrator = DCAFOrchestrator(config)
 
         # Full pipeline (train + analyze):
-        result = orchestrator.run_full(model, tokenizer, datasets)
+        result = orchestrator.run_full(model, tokenizer, datasets, "./runs/run_001")
 
         # Analysis only (on saved deltas):
         result = orchestrator.run_analysis(run_path, model_name)
@@ -41,8 +39,16 @@ class DCAFOrchestrator:
 
     def __init__(self, config: Optional[DCAFConfig] = None, device: Optional[str] = None):
         self.config = config or DCAFConfig()
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or "auto"
         self._step_timings: Dict[str, float] = {}
+
+    def _resolve_device(self) -> str:
+        """Resolve auto device lazily so importing this module never touches torch."""
+        if self.device != "auto":
+            return self.device
+        import torch
+
+        return "cuda" if torch.cuda.is_available() else "cpu"
 
     def _timed(self, name: str, fn: Callable) -> Any:
         """Execute a function with timing and logging."""
@@ -53,6 +59,87 @@ class DCAFOrchestrator:
         self._step_timings[name] = elapsed
         logger.info(f"[DCAF] {name} — completed in {elapsed:.1f}s")
         return result
+
+    # =========================================================================
+    # Full mode (train signals, save artifacts, then analyze)
+    # =========================================================================
+
+    def run_full(
+        self,
+        model: Any,
+        tokenizer: Any,
+        datasets: Dict[str, Any],
+        output_path: str,
+        variant_config: Optional[Any] = None,
+        model_name: Optional[str] = None,
+        epochs_per_phase: int = 1,
+        max_steps_per_phase: int = -1,
+        skip_activation: bool = False,
+        skip_geometry: bool = False,
+        skip_ablation: bool = False,
+        on_step: Optional[Callable[[str], None]] = None,
+    ) -> Dict[str, Any]:
+        """Run training and analysis in one call."""
+        from dcaf.storage.delta_store import DeltaMetadata, DeltaStore
+        from dcaf.training.variants import TrainingOrchestrator, build_variant
+
+        device = self._resolve_device()
+        run_path = Path(output_path)
+        delta_store = DeltaStore(run_path)
+        variant_config = variant_config or build_variant(no_simpo=not self.config.use_simpo)
+        model_name = model_name or getattr(model, "name_or_path", None) or model.__class__.__name__
+
+        metadata = DeltaMetadata.create(
+            model_name=model_name,
+            variant_name=variant_config.name,
+            training_config={
+                "epochs_per_phase": epochs_per_phase,
+                "max_steps_per_phase": max_steps_per_phase,
+                "device": device,
+                "use_simpo": self.config.use_simpo,
+            },
+            dataset_config={"source": "programmatic"},
+        )
+        delta_store.save_metadata(metadata)
+
+        def do_training():
+            trainer = TrainingOrchestrator(model, tokenizer, self.config, device)
+            trainer.run_variant(
+                variant_config=variant_config,
+                safe_simpo_dataset=datasets.get("safe_simpo"),
+                unsafe_simpo_dataset=datasets.get("unsafe_simpo"),
+                safe_sft_dataloader=datasets.get("safe_sft_dataloader"),
+                unsafe_sft_dataloader=datasets.get("unsafe_sft_dataloader"),
+                language_dataloader=datasets.get("language_dataloader"),
+                epochs_per_phase=epochs_per_phase,
+                max_steps_per_phase=max_steps_per_phase,
+                delta_store=delta_store,
+            )
+            metadata.available_deltas = delta_store.list_deltas()
+            metadata.available_checkpoints = delta_store.list_checkpoints()
+            delta_store.save_metadata(metadata)
+            return {
+                "run_path": str(run_path),
+                "deltas": metadata.available_deltas,
+                "checkpoints": metadata.available_checkpoints,
+            }
+
+        if on_step:
+            on_step("training")
+        training_results = self._timed("Step 1-4: Signal training", do_training)
+
+        if on_step:
+            on_step("analysis")
+        analysis_results = self.run_analysis(
+            run_path=str(run_path),
+            model_name=model_name,
+            skip_activation=skip_activation,
+            skip_geometry=skip_geometry,
+            skip_ablation=skip_ablation,
+            on_step=on_step,
+        )
+        analysis_results["training"] = training_results
+        return analysis_results
 
     # =========================================================================
     # Analysis-only mode (on saved deltas)
@@ -82,6 +169,7 @@ class DCAFOrchestrator:
         """
         from dcaf.storage.delta_store import DeltaStore
 
+        device = self._resolve_device()
         run_path = Path(run_path)
         delta_store = DeltaStore(run_path)
 
@@ -131,7 +219,7 @@ class DCAFOrchestrator:
                 from dcaf.cli._analyze.activation_runner import run_activation_analysis
                 act_results = run_activation_analysis(
                     run_path, model_name=model_name,
-                    tau_A=self.config.tau_A, device=self.device,
+                    tau_A=self.config.tau_A, device=device,
                 )
                 results["activation"] = act_results
                 return act_results
@@ -144,7 +232,7 @@ class DCAFOrchestrator:
                 from dcaf.cli._analyze.geometry_runner import run_geometry_analysis
                 geo_results = run_geometry_analysis(
                     run_path, model_name=model_name,
-                    tau_G=self.config.tau_G, device=self.device,
+                    tau_G=self.config.tau_G, device=device,
                 )
                 results["geometry"] = geo_results
                 return geo_results
@@ -158,7 +246,7 @@ class DCAFOrchestrator:
                 run_path, model_name=model_name,
                 tau_W=self.config.tau_W, tau_A=self.config.tau_A, tau_G=self.config.tau_G,
                 skip_activation=skip_activation, skip_geometry=skip_geometry,
-                device=self.device,
+                device=device,
             )
             results["full"] = full_results
             return full_results
@@ -174,9 +262,13 @@ class DCAFOrchestrator:
                     return None
 
                 from dcaf.cli._analyze.ablation_runner import run_ablation_testing
-                param_names = [c.get("param_name", c.get("id", "")) for c in matching_params]
+                param_names = [
+                    c.get("param_name") or str(c.get("id", ""))
+                    for c in matching_params
+                ]
+                param_names = [name for name in param_names if name]
                 ablation_results = run_ablation_testing(
-                    run_path, param_names, top_k=20,
+                    run_path, param_names, top_k=20, device=device,
                 )
                 results["ablation"] = ablation_results
                 return ablation_results
@@ -185,8 +277,41 @@ class DCAFOrchestrator:
 
         # Step 17: Build output
         def do_output():
-            from dcaf.output.schema import assemble_output
+            from dcaf.output.schema import assemble_component_output, assemble_output
             full = results.get("full", {})
+            component_results = [
+                assemble_component_output(
+                    component=(
+                        candidate.get("component")
+                        or candidate.get("param_name")
+                        or f"idx_{candidate.get('id')}"
+                    ),
+                    param_names=(
+                        [candidate["param_name"]]
+                        if candidate.get("param_name") else []
+                    ),
+                    scores={
+                        "C_W": candidate.get("C_W"),
+                        "C_A": candidate.get("C_A"),
+                        "C_G": candidate.get("C_G"),
+                        "C_unified": candidate.get("C_unified"),
+                    },
+                    discovery={
+                        "paths": candidate.get("paths", []),
+                        "path_count": len(candidate.get("paths", [])),
+                        "multi_path_bonus": candidate.get("bonus", 0.0),
+                    },
+                    weight_details={
+                        "bidirectional": False,
+                        "opp_degree": candidate.get("opp_degree", 0.0),
+                    },
+                    diagnostics={
+                        "candidate_id": candidate.get("id"),
+                        "C_base": candidate.get("C_base"),
+                    },
+                )
+                for candidate in full.get("top_candidates", [])
+            ]
             output = assemble_output(
                 run_path=str(run_path),
                 model_name=model_name,
@@ -196,7 +321,7 @@ class DCAFOrchestrator:
                 activation_summary=results.get("activation"),
                 geometry_summary=results.get("geometry"),
                 triangulation_summary=full.get("triangulation"),
-                component_results=full.get("top_candidates"),
+                component_results=component_results,
                 ablation_summary=results.get("ablation"),
                 thresholds={
                     "tau_W": self.config.tau_W,
@@ -218,8 +343,9 @@ class DCAFOrchestrator:
 
     def save_results(self, results: Dict[str, Any], output_path: str) -> None:
         """Save analysis results to JSON."""
+        payload = results.get("output", results)
         with open(output_path, "w") as f:
-            json.dump(results, f, indent=2, default=str)
+            json.dump(payload, f, indent=2, default=str)
         logger.info(f"[DCAF] Results saved to {output_path}")
 
 

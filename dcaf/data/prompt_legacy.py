@@ -144,6 +144,22 @@ def __getattr__(name):
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
+# Define the legacy module attributes so `from dcaf.data.prompt_legacy import *`
+# and static analyzers see the same public surface as direct attribute access.
+PROMPTS = _get_prompts_dict()
+BENIGN_PROMPTS = _get_benign_dict()
+BENIGN_TEST_PROMPTS = BENIGN_PROMPTS["questions"]
+COMPLETION_PROMPTS_VIOLENCE = PROMPTS.get("violence", {}).get("completions", [])
+_violence_questions = PROMPTS.get("violence", {}).get("questions", [])
+HARMFUL_PROMPTS_VIOLENCE = (
+    _violence_questions[:5] if len(_violence_questions) >= 5 else _violence_questions
+)
+HARMFUL_PROMPTS_EXTENDED = (
+    _violence_questions[5:] if len(_violence_questions) > 5 else []
+)
+del _violence_questions
+
+
 # =============================================================================
 # RECREATED FUNCTIONS FOR BACKWARD COMPATIBILITY
 # =============================================================================

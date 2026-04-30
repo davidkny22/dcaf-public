@@ -17,7 +17,7 @@ from typing import Dict, List, Any, Callable, Optional
 from dataclasses import dataclass, field
 
 from dcaf.ablation.methods import ModelStateManager
-from dcaf.core.defaults import TAU_ORPHAN
+from dcaf.core.defaults import TAU_ABS, TAU_ORPHAN
 
 
 @dataclass
@@ -69,7 +69,7 @@ def test_orphan(
     model,
     state_manager: ModelStateManager,
     test_fn: Callable[..., float],
-    impact_threshold: float = 0.1,
+    impact_threshold: float = TAU_ABS,
     test_kwargs: Optional[Dict[str, Any]] = None,
 ) -> OrphanTestResult:
     """
@@ -129,7 +129,7 @@ def test_orphans_batch(
     state_manager: ModelStateManager,
     test_fn: Callable[..., float],
     confidence_threshold: float = TAU_ORPHAN,
-    impact_threshold: float = 0.1,
+    impact_threshold: float = TAU_ABS,
     test_kwargs: Optional[Dict[str, Any]] = None,
 ) -> List[OrphanTestResult]:
     """

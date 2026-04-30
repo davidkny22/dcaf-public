@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 import random
 
-from dcaf.core.defaults import EPSILON_TRI
+from dcaf.core.defaults import EPSILON_OPP, EPSILON_TRI, TAU_ABS, TAU_EDGE
 from dcaf.ablation.methods import ModelStateManager
 from dcaf.ablation.superadditivity import (
     SuperadditivityResult,
@@ -109,8 +109,8 @@ class StrategyA_GraphAdjacent(InteractionStrategy):
         self,
         candidates: Set[str],
         circuit_edges: Optional[List[Tuple[str, str, float]]] = None,
-        edge_weight_threshold: float = 0.5,
-        impact_threshold: float = 0.1,
+        edge_weight_threshold: float = TAU_EDGE,
+        impact_threshold: float = TAU_ABS,
         **kwargs,
     ) -> StrategyResult:
         """
@@ -393,7 +393,7 @@ class StrategyE_OppositionGrouping(InteractionStrategy):
         self,
         candidates: Set[str],
         opposition_data: Optional[Dict[str, Tuple[float, float]]] = None,
-        similarity_threshold: float = 0.1,
+        similarity_threshold: float = EPSILON_OPP,
         top_n: int = 20,
         **kwargs,
     ) -> StrategyResult:
@@ -481,7 +481,7 @@ class StrategyF_CrossLayerComposition(InteractionStrategy):
         self,
         candidates: Set[str],
         top_n: int = 20,
-        impact_threshold: float = 0.1,
+        impact_threshold: float = TAU_ABS,
         **kwargs,
     ) -> StrategyResult:
         """

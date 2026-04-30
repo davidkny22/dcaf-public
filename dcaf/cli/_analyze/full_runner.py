@@ -9,6 +9,7 @@ Usage:
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -20,8 +21,41 @@ from dcaf.core.defaults import (
     TAU_G_DEFAULT,
     TOP_K_CANDIDATES,
 )
+from dcaf.arch.transformer import parse_param_metadata
 
 logger = logging.getLogger(__name__)
+
+
+def _param_to_component(param_name: Optional[str]) -> Optional[str]:
+    """Map a transformer parameter name to the component IDs used by analysis."""
+    if not param_name:
+        return None
+
+    meta = parse_param_metadata(param_name)
+    layer = meta.get("layer")
+    component = meta.get("component")
+    if layer is None or component is None:
+        return None
+    if component == "mlp":
+        return f"L{layer}_MLP"
+    if component == "attention":
+        return f"L{layer}H"
+    return f"L{layer}"
+
+
+def _with_attention_layer_aggregates(confidences: Dict[str, float]) -> Dict[str, float]:
+    """Add L{layer}H aggregate keys for per-head attention confidence outputs."""
+    aggregated = dict(confidences)
+    by_layer: Dict[str, List[float]] = {}
+    for component, value in confidences.items():
+        match = re.fullmatch(r"L(\d+)H\d+", component)
+        if match:
+            by_layer.setdefault(f"L{match.group(1)}H", []).append(value)
+
+    for component, values in by_layer.items():
+        if values and component not in aggregated:
+            aggregated[component] = max(values)
+    return aggregated
 
 
 def run_full_analysis(
@@ -93,12 +127,21 @@ def run_full_analysis(
 
     logger.info(f"Run: {run_path}")
     logger.info(f"Model: {model_name}")
-    logger.info(f"Thresholds: τ_W={tau_W}, τ_A={tau_A}, τ_G={tau_G}")
+    threshold_config = ThresholdConfig(tau_W=tau_W, tau_A=tau_A, tau_G=tau_G)
+    logger.info(
+        f"Thresholds: τ_W={tau_W}, τ_A={tau_A}, τ_G={tau_G}, "
+        f"τ_unified={threshold_config.tau_unified}"
+    )
 
     results = {
         "run_path": str(run_path),
         "model_name": model_name,
-        "thresholds": {"tau_W": tau_W, "tau_A": tau_A, "tau_G": tau_G},
+        "thresholds": {
+            "tau_W": tau_W,
+            "tau_A": tau_A,
+            "tau_G": tau_G,
+            "tau_unified": threshold_config.tau_unified,
+        },
     }
 
     # Check for pre-computed discovery
@@ -106,6 +149,7 @@ def run_full_analysis(
     discovery_info = None
     H_disc = None
     use_precomputed_discovery = False
+    discovery_param_names: Dict[int, str] = {}
 
     if discovery_path.exists():
         logger.info("\n" + "-" * 60)
@@ -121,6 +165,11 @@ def run_full_analysis(
         discovery_data = load_discovery_result(discovery_path)
         H_disc, discovery_info, H_W_loaded, H_A_loaded, H_G_loaded = discovery_result_to_sets(discovery_data)
         use_precomputed_discovery = True
+        for idx, name in discovery_data.get("param_index_to_name", {}).items():
+            try:
+                discovery_param_names[int(idx)] = name
+            except (TypeError, ValueError):
+                continue
 
         results["discovery"] = {
             "source": "discovery.json",
@@ -148,10 +197,11 @@ def run_full_analysis(
     from dcaf.cli._analyze.weight_runner import run_weight_analysis
 
     # Always run weight analysis to get C_W confidence values
+    weight_top_k = max(top_k * 2, len(H_disc) if H_disc else 0)
     weight_results = run_weight_analysis(
         run_path=run_path,
         tau_W=tau_W,
-        top_k=top_k * 2,  # Get more candidates for filtering
+        top_k=weight_top_k,  # Get more candidates for filtering
         verbose=False,
     )
 
@@ -163,21 +213,27 @@ def run_full_analysis(
 
     logger.info(f"Weight analysis: {weight_results.get('passing_threshold', 0)} candidates passing τ_W")
 
-    # Build confidence dict and param names from weight results
-    threshold_config = ThresholdConfig(tau_W=tau_W, tau_A=tau_A, tau_G=tau_G)
-
-    weight_confidences = {}
-    param_names = {}
-    for cand in weight_results.get("top_candidates", []):
-        idx = cand["index"]
-        weight_confidences[idx] = cand["C_W"]
-        if cand.get("param_name"):
-            param_names[idx] = cand["param_name"]
+    # Build confidence dict and param names from the full weight score table.
+    weight_confidences = {
+        int(idx): score
+        for idx, score in weight_results.get("scores_by_param", {}).items()
+    }
+    param_names = dict(discovery_param_names)
+    param_names.update({
+        int(idx): name
+        for idx, name in weight_results.get("param_index_to_name", {}).items()
+    })
+    component_map = {}
+    for idx, pname in param_names.items():
+        component = _param_to_component(pname)
+        if component:
+            component_map[idx] = component
 
     # Create H_W from weight analysis (used when no discovery.json)
     H_W = create_discovery_set(
         weight_confidences=weight_confidences,
         threshold_config=threshold_config,
+        component_map=component_map,
     )
 
     if use_precomputed_discovery:
@@ -217,8 +273,13 @@ def run_full_analysis(
             }
 
             # Build activation confidence dict by component
-            for comp_data in activation_results.get("top_components", []):
-                activation_confidences[comp_data["component"]] = comp_data["C_A"]
+            activation_confidences.update(
+                activation_results.get("component_confidences", {})
+            )
+            if not activation_confidences:
+                for comp_data in activation_results.get("top_components", []):
+                    activation_confidences[comp_data["component"]] = comp_data["C_A"]
+            activation_confidences = _with_attention_layer_aggregates(activation_confidences)
 
             logger.info(f"Activation analysis: {activation_results.get('passing_threshold', 0)} components passing τ_A")
 
@@ -258,8 +319,13 @@ def run_full_analysis(
             }
 
             # Build geometry confidence dict by component
-            for comp_data in geometry_results.get("top_components", []):
-                geometry_confidences[comp_data["component"]] = comp_data["C_G"]
+            geometry_confidences.update(
+                geometry_results.get("component_confidences", {})
+            )
+            if not geometry_confidences:
+                for comp_data in geometry_results.get("top_components", []):
+                    geometry_confidences[comp_data["component"]] = comp_data["C_G"]
+            geometry_confidences = _with_attention_layer_aggregates(geometry_confidences)
 
             logger.info(f"Geometry analysis: {geometry_results.get('passing_threshold', 0)} components passing τ_G")
 
@@ -282,9 +348,22 @@ def run_full_analysis(
     # Otherwise use H_W computed inline
     base_discovery_set = H_W
     if use_precomputed_discovery and H_disc:
-        # Create discovery set from H_disc with weight confidences
-        base_discovery_set = create_discovery_set(
-            weight_confidences={idx: weight_confidences.get(idx, 0.0) for idx in H_disc},
+        candidates = {}
+        for idx in H_disc:
+            if idx not in component_map and idx in param_names:
+                component = _param_to_component(param_names[idx])
+                if component:
+                    component_map[idx] = component
+            candidates[idx] = CandidateInfo(
+                id=idx,
+                status=CandidateStatus.DISCOVERY,
+                C_W=weight_confidences.get(idx),
+                discovery=discovery_info.get(idx) if discovery_info else None,
+                component=component_map.get(idx),
+            )
+        base_discovery_set = CandidateSet(
+            name="H_disc",
+            candidates=candidates,
             threshold_config=threshold_config,
         )
         logger.info(f"Using H_disc from discovery.json: {len(H_disc)} params")
@@ -324,7 +403,13 @@ def run_full_analysis(
         # C_unified = min(1, C_base + bonus)
         unified_scores[cid] = min(1.0, C_base + bonus)
 
+    unified_scores = {
+        cid: score
+        for cid, score in unified_scores.items()
+        if score >= threshold_config.tau_unified
+    }
     results["triangulated_count"] = len(triangulated)
+    results["unified_threshold_count"] = len(unified_scores)
 
     # Get top by unified confidence (with bonus applied)
     top_triangulated = sorted(
@@ -337,6 +422,10 @@ def run_full_analysis(
         {
             "id": cid,
             "param_name": param_names.get(cid),
+            "component": (
+                H_cand.candidates[cid].component
+                if cid in H_cand.candidates else None
+            ),
             "C_unified": score,
             "C_base": triangulated[cid].value if cid in triangulated else None,
             "bonus": discovery_info[cid].bonus if discovery_info and cid in discovery_info else 0.0,
@@ -351,7 +440,7 @@ def run_full_analysis(
     # ==========================================================================
     # STEP 5: Circuit Analysis (Optional)
     # ==========================================================================
-    if not skip_circuit and len(H_cand) > 0:
+    if not skip_circuit and results["top_candidates"]:
         logger.info("\n" + "-" * 60)
         logger.info("STEP 5: Circuit Analysis")
         logger.info("-" * 60)
@@ -391,7 +480,6 @@ def run_full_analysis(
             if name and len(name) > 40:
                 name = name[:37] + "..."
             bonus = c.get("bonus", 0)
-            paths = c.get("paths", [])
             path_str = f" +{bonus:.2f}" if bonus > 0 else ""
             logger.info(
                 f"  {i+1}. C={c['C_unified']:.4f}{path_str} "
@@ -446,6 +534,7 @@ def display_full_results(results: Dict[str, Any]) -> None:
     print(f"H_W (discovery):     {results.get('H_W_count', 0):4} params")
     print(f"H_cand (validated):  {results.get('H_cand_count', 0):4} params")
     print(f"Triangulated:        {results.get('triangulated_count', 0):4} params")
+    print(f"Unified threshold:  {results.get('unified_threshold_count', 0):4} params")
 
     # Show discovery source
     discovery = results.get("discovery", {})

@@ -16,13 +16,14 @@ Based on:
 - Standard ablation studies extended to track cross-component effects
 """
 
-from typing import Dict, List, Set, Optional, Tuple, Literal
+from typing import Dict, List, Set, Optional, Tuple, Literal, TYPE_CHECKING
 from dataclasses import dataclass
 import re
 import logging
 import numpy as np
 import torch
 
+from dcaf.core.defaults import ATTENTION_WEIGHT, TAU_EDGE
 from dcaf.domains.activation import ProbeSet, ActivationDelta, ActivationSnapshot
 from dcaf.circuit.results import (
     Circuit,
@@ -34,6 +35,9 @@ from dcaf.circuit.graph import CircuitGraph, CircuitEdge
 logger = logging.getLogger(__name__)
 
 ClusteringMethod = Literal["disjoint", "probe-response", "functional"]
+
+if TYPE_CHECKING:
+    from dcaf.ablation.results import WeightClassification
 
 
 @dataclass
@@ -78,8 +82,8 @@ class CircuitIdentifier:
         ablation_deltas: Dict[str, ActivationDelta],
         weight_candidates: List[str],
         probe_set: ProbeSet,
-        edge_threshold: float = 0.1,
-        attention_weight: float = 0.3,
+        edge_threshold: float = TAU_EDGE,
+        attention_weight: float = ATTENTION_WEIGHT,
     ):
         """
         Initialize circuit identifier.
@@ -261,7 +265,7 @@ class CircuitIdentifier:
 
     def set_generation_properties(
         self,
-        generation_threshold: float = 0.1,
+        generation_threshold: float = TAU_EDGE,
     ) -> None:
         """
         Set node properties for generation steering circuits using delta-of-deltas.
@@ -539,7 +543,7 @@ class CircuitIdentifier:
         self,
         harmful_activations: Dict[str, float],
         neutral_activations: Dict[str, float],
-        activation_threshold: float = 0.1,
+        activation_threshold: float = TAU_EDGE,
     ) -> List[Circuit]:
         """
         Option 3: Cluster by harmful vs neutral response.

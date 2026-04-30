@@ -19,6 +19,7 @@ import torch
 from torch import Tensor
 
 from dcaf.ablation import ModelStateManager
+from dcaf.arch.transformer import should_exclude_param
 from dcaf.core.defaults import TAU_ACT, TAU_COMP
 from dcaf.discovery.activation import compute_activation_discovery_set
 from dcaf.domains.activation import (
@@ -68,7 +69,7 @@ def run_activation_discovery(
 
     if not available_deltas:
         logger.error(f"No deltas found in {run_path}")
-        return set(), {}
+        return set(), {}, []
 
     logger.info(f"Found {len(available_deltas)} deltas: {available_deltas}")
 
@@ -92,7 +93,7 @@ def run_activation_discovery(
         device = "cpu"
         logger.warning("CUDA not available, using CPU")
 
-    # Load base model (the original pretrained model IS the base state)
+    # Load base model and restore the exact checkpoint saved during training.
     logger.info(f"\nLoading base model on {device}...")
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -101,6 +102,16 @@ def run_activation_discovery(
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+    try:
+        base_checkpoint = delta_store.load_checkpoint("base")
+    except FileNotFoundError:
+        logger.warning("No saved base checkpoint found; using freshly loaded model as base")
+    else:
+        with torch.no_grad():
+            for name, param in model.named_parameters():
+                if name in base_checkpoint:
+                    param.copy_(base_checkpoint[name].to(device))
 
     # Initialize activation capture
     capture = ActivationCapture(model)
@@ -117,18 +128,26 @@ def run_activation_discovery(
     all_components.update(baseline_snapshot.mlp_activations.keys())
     logger.info(f"  Components captured: {len(all_components)}")
 
-    # Build param_to_component mapping from model's own parameters
-    param_names = [name for name, _ in model.named_parameters()]
+    # Build param_to_component mapping using the same sorted delta ordering as H_W/H_G.
+    all_delta_params: Set[str] = set()
+    for delta_name in available_deltas:
+        all_delta_params.update(delta_store.load_delta(delta_name).keys())
+    param_names = sorted(all_delta_params)
+    model_params = dict(model.named_parameters())
     param_to_component: Dict[int, str] = {}
+    param_to_activation_component: Dict[int, str] = {}
     param_magnitudes: Dict[int, float] = {}
 
     for idx, pname in enumerate(param_names):
-        # Extract component from param name (e.g., "model.layers.5.mlp.gate_proj.weight" -> "L5_MLP_G")
-        component = extract_component_from_param_name(pname)
-        param_to_component[idx] = component
+        if should_exclude_param(pname):
+            continue
+
+        # Preserve fine-grained projection IDs while joining through activation-capture IDs.
+        param_to_component[idx] = extract_component_from_param_name(pname)
+        param_to_activation_component[idx] = extract_activation_component_from_param_name(pname)
 
         # Get param magnitude from base model
-        param = dict(model.named_parameters()).get(pname)
+        param = model_params.get(pname)
         if param is not None:
             param_magnitudes[idx] = torch.abs(param.data).mean().item()
         else:
@@ -137,8 +156,11 @@ def run_activation_discovery(
     # Find primary target-side delta for state manager
     safety_delta_name = next(
         (d for d in available_deltas if "t1_prefopt_target" in d),
-        next((d for d in available_deltas if "target" in d),
+        next((d for d in available_deltas if "t2_sft_target" in d),
+             next((d for d in available_deltas
+                   if "target" in d and "anti" not in d and "negated" not in d),
              next((d for d in available_deltas if "safe" in d), available_deltas[0]))
+    )
     )
     safety_delta = delta_store.load_delta(safety_delta_name)
 
@@ -184,6 +206,10 @@ def run_activation_discovery(
                 pre_acts[comp] = baseline_snapshot.mlp_activations[comp]
 
         magnitudes = compute_magnitude_from_snapshots(post_acts, pre_acts)
+        for idx, fine_component in param_to_component.items():
+            activation_component = param_to_activation_component[idx]
+            if fine_component not in magnitudes and activation_component in magnitudes:
+                magnitudes[fine_component] = magnitudes[activation_component]
         magnitudes_by_signal[signal_name] = magnitudes
 
         logger.info(f"  Computed magnitudes for {len(magnitudes)} components")
@@ -290,4 +316,29 @@ def extract_component_from_param_name(param_name: str) -> str:
         return "other"
 
 
-__all__ = ["run_activation_discovery", "extract_component_from_param_name"]
+def extract_activation_component_from_param_name(param_name: str) -> str:
+    """Map a parameter to the coarser component IDs emitted by ActivationCapture."""
+    parts = param_name.split(".")
+    layer_idx = None
+    for i, part in enumerate(parts):
+        if part == "layers" and i + 1 < len(parts):
+            try:
+                layer_idx = int(parts[i + 1])
+                break
+            except ValueError:
+                pass
+
+    if layer_idx is None:
+        return extract_component_from_param_name(param_name)
+    if "mlp" in param_name:
+        return f"L{layer_idx}_MLP"
+    if "self_attn" in param_name or "attention" in param_name:
+        return f"L{layer_idx}H"
+    return extract_component_from_param_name(param_name)
+
+
+__all__ = [
+    "run_activation_discovery",
+    "extract_component_from_param_name",
+    "extract_activation_component_from_param_name",
+]

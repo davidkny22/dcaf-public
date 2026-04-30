@@ -1,56 +1,68 @@
-"""Circuit graph reconstruction and identification (§9, Def 9.9).
+"""Circuit graph reconstruction and identification (§9).
 
-Public API:
-- CircuitGraph / CircuitNode / CircuitEdge: Graph data structures
-- PathwayAttribution: Q/K/V pathway attribution for attention edges
-- FunctionalCategory / TieredClassification / classify_component_tiered: Component classification (Def 11.23-11.27)
-- Circuit / CircuitValidation / CircuitAnalysisResults: Result types
-- CircuitIdentifier: 7-step circuit identification pipeline
-- KnownCircuitsDatabase / KnownCircuit / CircuitType: Pre-identified circuit database
-- SteeringVector / SteeringAnalysis: Steering vector optimization (§10)
-- ComponentResult: Unified per-component result container (§13, Def 13.4)
+Torch-backed pathway, identifier, and steering helpers are loaded lazily so
+``import dcaf.circuit`` remains a lightweight dataclass/graph import.
 """
 
-from dcaf.circuit.graph import CircuitGraph, CircuitNode, CircuitEdge
-from dcaf.circuit.pathway import PathwayAttribution, compute_pathway_attribution, compute_pathway_from_weight_deltas
 from dcaf.circuit.classification import (
-    FunctionalCategory,
     ComponentClassification,
+    FunctionalCategory,
     TieredClassification,
-    classify_component,
-    classify_component_tiered,
-    classify_component_detailed,
-    classify_from_impact,
-    classify_circuit,
     classify_all_components,
-    get_recognition_components,
-    get_steering_components,
-    get_preference_components,
-    get_shared_components,
-    get_false_positive_components,
+    classify_circuit,
+    classify_component,
+    classify_component_detailed,
+    classify_component_tiered,
+    classify_from_impact,
     get_classification_summary,
-)
-from dcaf.circuit.results import Circuit, CircuitValidation, CircuitAnalysisResults
-from dcaf.circuit.identifier import CircuitIdentifier
-from dcaf.circuit.known_circuits import KnownCircuitsDatabase, KnownCircuit, CircuitType
-from dcaf.circuit.steering import (
-    SteeringVector,
-    SteeringAlignment,
-    SteeringAnalysis,
-    compute_full_steering_analysis,
+    get_false_positive_components,
+    get_preference_components,
+    get_recognition_components,
+    get_shared_components,
+    get_steering_components,
 )
 from dcaf.circuit.component_result import ComponentResult
+from dcaf.circuit.graph import CircuitEdge, CircuitGraph, CircuitNode
+from dcaf.circuit.known_circuits import CircuitType, KnownCircuit, KnownCircuitsDatabase
+from dcaf.circuit.results import Circuit, CircuitAnalysisResults, CircuitValidation
+
+_LAZY_EXPORTS = {
+    "PathwayAttribution": ("dcaf.circuit.pathway", "PathwayAttribution"),
+    "compute_pathway_attribution": (
+        "dcaf.circuit.pathway",
+        "compute_pathway_attribution",
+    ),
+    "compute_pathway_from_weight_deltas": (
+        "dcaf.circuit.pathway",
+        "compute_pathway_from_weight_deltas",
+    ),
+    "CircuitIdentifier": ("dcaf.circuit.identifier", "CircuitIdentifier"),
+    "SteeringVector": ("dcaf.circuit.steering", "SteeringVector"),
+    "SteeringAlignment": ("dcaf.circuit.steering", "SteeringAlignment"),
+    "SteeringAnalysis": ("dcaf.circuit.steering", "SteeringAnalysis"),
+    "compute_full_steering_analysis": (
+        "dcaf.circuit.steering",
+        "compute_full_steering_analysis",
+    ),
+}
+
+
+def __getattr__(name: str):
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(name)
+
+    from importlib import import_module
+
+    module_name, attr_name = _LAZY_EXPORTS[name]
+    value = getattr(import_module(module_name), attr_name)
+    globals()[name] = value
+    return value
+
 
 __all__ = [
-    # Graph structures
     "CircuitGraph",
     "CircuitNode",
     "CircuitEdge",
-    # Pathway attribution
-    "PathwayAttribution",
-    "compute_pathway_attribution",
-    "compute_pathway_from_weight_deltas",
-    # Classification (Def 11.23-11.27)
     "FunctionalCategory",
     "ComponentClassification",
     "TieredClassification",
@@ -66,21 +78,12 @@ __all__ = [
     "get_shared_components",
     "get_false_positive_components",
     "get_classification_summary",
-    # Results
     "Circuit",
     "CircuitValidation",
     "CircuitAnalysisResults",
-    # Identifier
-    "CircuitIdentifier",
-    # Known circuits database
     "KnownCircuitsDatabase",
     "KnownCircuit",
     "CircuitType",
-    # Steering (§10)
-    "SteeringVector",
-    "SteeringAlignment",
-    "SteeringAnalysis",
-    "compute_full_steering_analysis",
-    # Component result (§13)
     "ComponentResult",
+    *_LAZY_EXPORTS.keys(),
 ]

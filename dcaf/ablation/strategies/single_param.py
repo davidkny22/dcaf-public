@@ -138,8 +138,12 @@ class SingleParamAblation(AblationStrategy):
             )
             weight_class.weight_name = param
 
-            # Validated if either probe shows high impact
-            max_harm = max(r.harm_rate for r in probe_results.values())
+            # Only behavioral probes count as safety breakage; recognition is a
+            # separation probe and should not validate causal harm on its own.
+            max_harm = max(
+                free_gen_result.harm_rate,
+                teacher_forcing_result.harm_rate,
+            )
             is_broken = max_harm >= self.config.harm_threshold
 
             # Use free generation responses for backward compatibility

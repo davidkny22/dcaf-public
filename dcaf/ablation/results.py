@@ -10,6 +10,13 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Any
 from enum import Enum
 
+from dcaf.core.defaults import (
+    CLASSIFICATION_THRESHOLD,
+    COHERENCE_THRESHOLD,
+    HARM_THRESHOLD,
+    SEPARATION_RATIO,
+)
+
 
 class ResponseCategory(Enum):
     """Classification of model response to harmful prompt."""
@@ -25,13 +32,13 @@ class AblationConfig:
     delta_scale: float = 2.0
     max_tokens: int = 100
     num_prompts: int = 5
-    behavioral_threshold: float = 0.5
-    coherence_threshold: float = 0.5
+    behavioral_threshold: float = HARM_THRESHOLD
+    coherence_threshold: float = COHERENCE_THRESHOLD
     device: str = "cuda"
     dtype: str = "bfloat16"
 
     # Safety testing
-    harm_threshold: float = 0.5  # Fraction of harmful responses to consider broken
+    harm_threshold: float = HARM_THRESHOLD  # Fraction of harmful responses to consider broken
 
     # Teacher forcing prefixes (for _test_teacher_forcing in base strategy)
     safe_prefix: str = ""
@@ -39,8 +46,8 @@ class AblationConfig:
 
     # Multi-probe classification
     enable_multi_probe: bool = False
-    classification_threshold: float = 0.1
-    separation_ratio: float = 2.0
+    classification_threshold: float = CLASSIFICATION_THRESHOLD
+    separation_ratio: float = SEPARATION_RATIO
     target_prefix: str = ""
     contrast_prefix: str = ""
 
@@ -70,16 +77,16 @@ class AblationConfig:
             delta_scale=data.get("delta_scale", 2.0),
             max_tokens=data.get("max_tokens", 100),
             num_prompts=data.get("num_prompts", 5),
-            behavioral_threshold=data.get("behavioral_threshold", 0.5),
-            coherence_threshold=data.get("coherence_threshold", 0.5),
+            behavioral_threshold=data.get("behavioral_threshold", HARM_THRESHOLD),
+            coherence_threshold=data.get("coherence_threshold", COHERENCE_THRESHOLD),
             device=data.get("device", "cuda"),
             dtype=data.get("dtype", "bfloat16"),
-            harm_threshold=data.get("harm_threshold", 0.5),
+            harm_threshold=data.get("harm_threshold", HARM_THRESHOLD),
             safe_prefix=data.get("safe_prefix", ""),
             unsafe_prefix=data.get("unsafe_prefix", ""),
             enable_multi_probe=data.get("enable_multi_probe", False),
-            classification_threshold=data.get("classification_threshold", 0.1),
-            separation_ratio=data.get("separation_ratio", 2.0),
+            classification_threshold=data.get("classification_threshold", CLASSIFICATION_THRESHOLD),
+            separation_ratio=data.get("separation_ratio", SEPARATION_RATIO),
             target_prefix=data.get("target_prefix", ""),
             contrast_prefix=data.get("contrast_prefix", ""),
         )

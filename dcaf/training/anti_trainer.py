@@ -28,6 +28,11 @@ from dcaf.core.defaults import (
 
 logger = logging.getLogger(__name__)
 
+
+def _supports_bf16() -> bool:
+    return torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+
+
 # TRL availability check
 try:
     from trl import CPOTrainer, CPOConfig
@@ -135,7 +140,7 @@ def create_negated_simpo_trainer(
         logging_steps=10,
         report_to="none",
         remove_unused_columns=False,
-        bf16=True,  # Use bfloat16 (no gradient scaling needed)
+        bf16=_supports_bf16(),
         fp16=False,  # Disable fp16 gradient scaling
         gradient_checkpointing=True,
         dataset_num_proc=None,  # Avoid multiprocessing (Windows resource exhaustion)

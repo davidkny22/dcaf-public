@@ -15,6 +15,7 @@ from typing import Dict, List, Any, Callable, Optional
 from dataclasses import dataclass, field
 
 from dcaf.ablation.methods import ModelStateManager
+from dcaf.core.defaults import TAU_ABS
 
 
 @dataclass
@@ -60,7 +61,7 @@ def refine_group(
     model,
     state_manager: ModelStateManager,
     test_fn: Callable[..., float],
-    impact_threshold: float = 0.1,
+    impact_threshold: float = TAU_ABS,
     test_kwargs: Optional[Dict[str, Any]] = None,
 ) -> RefinementResult:
     """
@@ -146,7 +147,7 @@ def refine_groups_batch(
     model,
     state_manager: ModelStateManager,
     test_fn: Callable[..., float],
-    impact_threshold: float = 0.1,
+    impact_threshold: float = TAU_ABS,
     test_kwargs: Optional[Dict[str, Any]] = None,
 ) -> List[RefinementResult]:
     """

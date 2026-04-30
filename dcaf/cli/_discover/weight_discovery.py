@@ -118,14 +118,7 @@ def run_weight_discovery(
 
     logger.info(f"Total named parameters: {len(param_names)}")
 
-    # Detect signal clusters present in this run.
-    # New delta names follow the pattern delta_t{N}_{name}, e.g. delta_t1_prefopt_target.
-    # Cluster membership is determined by CANONICAL_SIGNALS: cluster "+" = T+, "-" = T-, "0" = T0.
-    target_ids = {f"delta_{s.id}" for s in CANONICAL_SIGNALS if s.cluster == "+"}
-    opposite_ids = {f"delta_{s.id}" for s in CANONICAL_SIGNALS if s.cluster == "-"}
-    baseline_ids = {f"delta_{s.id}" for s in CANONICAL_SIGNALS if s.cluster == "0"}
-
-    # Also accept legacy delta names that embed the run_type token
+    # Detect signal clusters from canonical IDs and legacy names.
     def _classify(name: str) -> str:
         """Return '+', '-', or '0' for a delta name."""
         # Exact match to canonical delta names (delta_t1_prefopt_target, etc.)

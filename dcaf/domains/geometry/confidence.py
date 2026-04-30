@@ -13,6 +13,10 @@ from .lrs import LRSResult, LRSBreakdown
 from .generalization import GeneralizationResult
 
 
+def _clamp_unit(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
 @dataclass
 class GeometryConfidenceResult:
     """
@@ -48,12 +52,14 @@ def compute_geometry_confidence(
     Returns:
         GeometryConfidenceResult
     """
-    C_G = lrs_result.lrs * gen_result.gen
+    lrs = _clamp_unit(lrs_result.lrs)
+    gen = _clamp_unit(gen_result.gen)
+    C_G = _clamp_unit(lrs * gen)
 
     return GeometryConfidenceResult(
         C_G=C_G,
-        lrs=lrs_result.lrs,
-        gen=gen_result.gen,
+        lrs=lrs,
+        gen=gen,
         lrs_result=lrs_result,
         gen_result=gen_result,
     )
@@ -75,7 +81,7 @@ def compute_geometry_confidence_simple(
     Returns:
         Geometry confidence value
     """
-    return lrs * gen
+    return _clamp_unit(_clamp_unit(lrs) * _clamp_unit(gen))
 
 
 def compute_all_geometry_confidences(

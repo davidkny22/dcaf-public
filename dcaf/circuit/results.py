@@ -11,6 +11,8 @@ from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from datetime import datetime
 from pathlib import Path
 
+from dcaf.core.defaults import ATTENTION_WEIGHT, TAU_EDGE
+
 if TYPE_CHECKING:
     from dcaf.circuit.graph import CircuitEdge, CircuitNode
     from dcaf.ablation.results import WeightClassification
@@ -164,8 +166,8 @@ class CircuitAnalysisResults:
 
     circuits: List[Circuit] = field(default_factory=list)
     clustering_method: str = "disjoint"
-    edge_threshold: float = 0.1
-    attention_weight: float = 0.3
+    edge_threshold: float = TAU_EDGE
+    attention_weight: float = ATTENTION_WEIGHT
     total_weight_candidates: int = 0
     probe_set_name: str = ""
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
@@ -250,8 +252,8 @@ class CircuitAnalysisResults:
         return cls(
             circuits=circuits,
             clustering_method=metadata.get("clustering_method", "disjoint"),
-            edge_threshold=metadata.get("edge_threshold", 0.1),
-            attention_weight=metadata.get("attention_weight", 0.3),
+            edge_threshold=metadata.get("edge_threshold", TAU_EDGE),
+            attention_weight=metadata.get("attention_weight", ATTENTION_WEIGHT),
             total_weight_candidates=metadata.get("total_weight_candidates", 0),
             probe_set_name=metadata.get("probe_set_name", ""),
             timestamp=metadata.get("timestamp", ""),

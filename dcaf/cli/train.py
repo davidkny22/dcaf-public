@@ -78,6 +78,23 @@ KNOWN_GROUPS = [
     "privacy", "harmful_content", "public_safety",
 ]
 
+
+def _require_non_empty(name: str, data, args) -> None:
+    """Fail early with filter context when a required dataset is empty."""
+    try:
+        size = len(data)
+    except TypeError:
+        return
+    if size == 0:
+        filters = {
+            "category": args.category,
+            "category_group": args.category_group,
+            "min_severity": args.min_severity,
+            "samples": args.samples,
+        }
+        raise ValueError(f"{name} is empty for filters {filters}")
+
+
 def create_argparser() -> argparse.ArgumentParser:
     """Create argparser with training-relevant flags."""
     parser = argparse.ArgumentParser(
@@ -187,7 +204,7 @@ Examples:
     )
     parser.add_argument(
         "--no-simpo", action="store_true",
-        help="Disable SimPO, use SFT instead (default: False, SimPO enabled)",
+        help="Use SFT-only training (no preference optimization). Replaces PrefOpt signals with SFT equivalents.",
     )
     parser.add_argument(
         "--simpo-batch-size", type=int, default=None,
@@ -287,7 +304,9 @@ def run_train(args):
     modifiers = build_modifiers_string(args)
     target = not args.opposite_only
     opposite = not args.target_only
-    variant_config = build_variant(modifiers, target=target, opposite=opposite)
+    variant_config = build_variant(
+        modifiers, target=target, opposite=opposite, no_simpo=args.no_simpo,
+    )
 
     # Apply training preset if specified
     if args.preset:
@@ -409,24 +428,29 @@ def run_train(args):
     datasets = {}
 
     # SimPO datasets
-    logger.info("  Creating SimPO safe dataset...")
-    datasets["safe_simpo"] = loader.create_simpo_dataset(
-        categories=category_filter,
-        min_severity=args.min_severity,
-    )
-    logger.info(f"    {len(datasets['safe_simpo'])} samples")
-
-    # Adversarial dataset (needed when opposite side is active)
-    if opposite:
-        logger.info("  Creating SimPO adversarial dataset...")
-        datasets["unsafe_simpo"] = loader.create_adversarial_simpo_dataset(
+    if not args.no_simpo:
+        logger.info("  Creating SimPO safe dataset...")
+        datasets["safe_simpo"] = loader.create_simpo_dataset(
             categories=category_filter,
             min_severity=args.min_severity,
         )
-        logger.info(f"    {len(datasets['unsafe_simpo'])} samples")
+        _require_non_empty("safe_simpo", datasets["safe_simpo"], args)
+        logger.info(f"    {len(datasets['safe_simpo'])} samples")
 
-    # SFT dataloaders for Anti and SFT modifiers
-    if args.anti or args.sft:
+        # Adversarial dataset is needed for T- runs and for target-side
+        # anti-training, which ascends on the opposite/unsafe preference set.
+        if opposite or (target and args.anti):
+            logger.info("  Creating SimPO adversarial dataset...")
+            datasets["unsafe_simpo"] = loader.create_adversarial_simpo_dataset(
+                categories=category_filter,
+                min_severity=args.min_severity,
+            )
+            _require_non_empty("unsafe_simpo", datasets["unsafe_simpo"], args)
+            logger.info(f"    {len(datasets['unsafe_simpo'])} samples")
+
+    # SFT dataloaders for SFT-backed runs.
+    needs_sft = args.no_simpo or args.sft or args.cumulative
+    if needs_sft:
         from torch.utils.data import DataLoader
         logger.info("  Creating SFT dataloaders...")
 
@@ -435,12 +459,14 @@ def run_train(args):
             categories=category_filter,
             min_severity=args.min_severity,
         )
+        _require_non_empty("unsafe_sft_dataset", unsafe_sft_dataset, args)
 
         # Create safe dataloader with collate_fn for tokenization
         safe_sft_dataset = loader.create_sft_safe_dataset(
             categories=category_filter,
             min_severity=args.min_severity,
         )
+        _require_non_empty("safe_sft_dataset", safe_sft_dataset, args)
 
         def collate_fn(examples):
             texts = [ex["text"] for ex in examples]
@@ -529,6 +555,7 @@ def run_train(args):
         # Create probe set (matched contrast pairs when available)
         from dcaf.domains.activation import ProbeSet
         category_lower = args.category.lower() if args.category else None
+        probe_set_source = "matched_pairs"
         try:
             probe_set = ProbeSet.from_pairs(
                 category=category_lower,
@@ -536,8 +563,9 @@ def run_train(args):
                 seed=42,
             )
             logger.info(f"Using matched contrast pairs: {len(probe_set)} prompts")
-        except Exception:
-            logger.info("Pair database not available, falling back to default probes")
+        except Exception as exc:
+            probe_set_source = "default_fallback"
+            logger.warning(f"Matched-pair probe set unavailable ({exc}); using default probes")
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", DeprecationWarning)
                 probe_set = ProbeSet.default(size=args.probe_size, seed=42)
@@ -554,6 +582,7 @@ def run_train(args):
             enable_free_generation=args.enable_free_generation,
             free_gen_max_tokens=args.free_gen_max_tokens,
         )
+        orchestrator._activation_config["probe_set_source"] = probe_set_source
 
         # Capture base activations BEFORE training
         logger.info("Capturing pre-training baseline activations...")
@@ -564,6 +593,8 @@ def run_train(args):
             probe_type=args.activation_probe_type,
             max_length=128,
             batch_size=args.activation_batch_size,
+            enable_free_generation=args.enable_free_generation,
+            max_new_tokens=args.free_gen_max_tokens,
         )
         delta_store.save_activation_snapshot("pre_training", base_snapshot)
         logger.info("  Pre-training baseline saved")
@@ -634,28 +665,68 @@ def run_train(args):
                     "min_severity": args.min_severity,
                 },
             )
+            if not args.no_capture_activations:
+                cat_metadata.activation_capture_enabled = True
+                cat_metadata.probe_set_name = probe_set.name
+                cat_metadata.probe_set_size = len(probe_set)
+                cat_metadata.activation_config = orchestrator._activation_config
             cat_delta_store.save_metadata(cat_metadata)
 
-            # Create category-specific SimPO dataset
-            cat_simpo = loader.create_simpo_dataset(
-                categories=[category],
-                min_severity=args.min_severity,
-            )
-
-            if len(cat_simpo) < 10:
-                logger.warning(f"Only {len(cat_simpo)} samples for {category}, skipping")
-                continue
-
-            logger.info(f"  Dataset size: {len(cat_simpo)} preference pairs")
-
-            # Create adversarial (opposite-side) dataset when running both directions
+            cat_simpo = None
             cat_unsafe_simpo = None
-            if not args.target_only:
-                cat_unsafe_simpo = loader.create_adversarial_simpo_dataset(
+            cat_safe_sft_dataloader = datasets.get("safe_sft_dataloader")
+            cat_unsafe_sft_dataloader = datasets.get("unsafe_sft_dataloader")
+
+            if args.no_simpo:
+                cat_safe_sft_dataset = loader.create_sft_safe_dataset(
                     categories=[category],
                     min_severity=args.min_severity,
                 )
-                logger.info(f"  Adversarial size: {len(cat_unsafe_simpo)} pairs")
+                cat_unsafe_sft_dataset = loader.create_sft_unsafe_dataset(
+                    categories=[category],
+                    min_severity=args.min_severity,
+                )
+
+                if len(cat_safe_sft_dataset) < 10:
+                    logger.warning(
+                        f"Only {len(cat_safe_sft_dataset)} SFT samples for {category}, skipping"
+                    )
+                    continue
+
+                cat_safe_sft_dataloader = DataLoader(
+                    cat_safe_sft_dataset,
+                    batch_size=args.sft_batch_size,
+                    shuffle=True,
+                    collate_fn=collate_fn,
+                )
+                cat_unsafe_sft_dataloader = DataLoader(
+                    cat_unsafe_sft_dataset,
+                    batch_size=args.sft_batch_size,
+                    shuffle=True,
+                    collate_fn=collate_fn,
+                )
+                logger.info(f"  SFT dataset size: {len(cat_safe_sft_dataset)} safe examples")
+                logger.info(f"  SFT adversarial size: {len(cat_unsafe_sft_dataset)} unsafe examples")
+            else:
+                # Create category-specific SimPO dataset
+                cat_simpo = loader.create_simpo_dataset(
+                    categories=[category],
+                    min_severity=args.min_severity,
+                )
+
+                if len(cat_simpo) < 10:
+                    logger.warning(f"Only {len(cat_simpo)} samples for {category}, skipping")
+                    continue
+
+                logger.info(f"  Dataset size: {len(cat_simpo)} preference pairs")
+
+                # Create adversarial data for T- runs and target-side anti-training.
+                if not args.target_only or args.anti:
+                    cat_unsafe_simpo = loader.create_adversarial_simpo_dataset(
+                        categories=[category],
+                        min_severity=args.min_severity,
+                    )
+                    logger.info(f"  Adversarial size: {len(cat_unsafe_simpo)} pairs")
 
             # Run DCAF for this category (training only, no analysis)
             try:
@@ -663,8 +734,8 @@ def run_train(args):
                     variant_config=variant_config,
                     safe_simpo_dataset=cat_simpo,
                     unsafe_simpo_dataset=cat_unsafe_simpo,
-                    safe_sft_dataloader=datasets.get("safe_sft_dataloader"),
-                    unsafe_sft_dataloader=datasets.get("unsafe_sft_dataloader"),
+                    safe_sft_dataloader=cat_safe_sft_dataloader,
+                    unsafe_sft_dataloader=cat_unsafe_sft_dataloader,
                     language_dataloader=datasets.get("language_dataloader"),
                     epochs_per_phase=args.epochs,
                     max_steps_per_phase=args.max_steps,
@@ -776,7 +847,11 @@ def run_train(args):
                             pad_token_id=tokenizer.eos_token_id,
                             eos_token_id=tokenizer.eos_token_id
                         )
-                    response = tokenizer.decode(outputs[0], skip_special_tokens=True)[len(prompt):]
+                    prompt_len = inputs["input_ids"].shape[-1]
+                    response = tokenizer.decode(
+                        outputs[0][prompt_len:],
+                        skip_special_tokens=True,
+                    )
 
                     # Use classifier to determine if refusal
                     result = refusal_classifier.classify(response, prompt)

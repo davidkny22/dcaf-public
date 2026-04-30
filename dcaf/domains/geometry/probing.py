@@ -21,11 +21,6 @@ import logging
 import numpy as np
 import torch
 from torch import Tensor
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import PolynomialFeatures
-from sklearn.model_selection import train_test_split
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.kernel_approximation import RBFSampler
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +105,9 @@ def compute_kernel_lda(
     Returns:
         Test accuracy in [0, 1].
     """
+    from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+    from sklearn.kernel_approximation import RBFSampler
+
     # RBF kernel approximation
     rbf = RBFSampler(gamma=1.0, n_components=100, random_state=42)
     X_train_rbf = rbf.fit_transform(X_train)
@@ -146,6 +144,10 @@ def compute_polynomial_probing(
     Returns:
         ProbingResults with accuracy scores, gaps, and top interactions.
     """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import PolynomialFeatures
+
     # Convert to numpy
     if isinstance(activations, torch.Tensor):
         X = activations.detach().cpu().numpy()

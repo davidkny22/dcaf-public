@@ -29,8 +29,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+train = ["unsloth"]
 interpretability = ["transformer-lens>=1.0.0"]
-dev = ["pytest>=7.0", "ruff>=0.1.0"]
+geometry = ["scikit-learn>=1.3.0", "scipy>=1.10.0", "pacmap>=0.7.0"]
+visualization = ["matplotlib>=3.7.0"]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.1.0",
+    "scikit-learn>=1.3.0",
+    "scipy>=1.10.0",
+    "pacmap>=0.7.0",
+    "matplotlib>=3.7.0",
+]
 
 [project.scripts]
 dcaf = "dcaf.cli.cli:main"

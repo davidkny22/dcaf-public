@@ -130,72 +130,68 @@ def validate_with_ablation(
         logger.warning(f"Parameter not found: {param_name}")
         return False, {"error": "parameter_not_found"}
 
-    with torch.no_grad():
-        for name, param in model.named_parameters():
-            if name == param_name:
-                param.fill_(param.mean())
+    try:
+        with torch.no_grad():
+            for name, param in model.named_parameters():
+                if name == param_name:
+                    param.fill_(param.mean())
+                    break
+
+        model.eval()
+
+        generation_broken = False
+        for prompt in benign_prompts[:2]:
+            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=256).to(device)
+            with torch.no_grad():
+                outputs = model.generate(
+                    **inputs, max_new_tokens=max_benign_tokens,
+                    do_sample=False, pad_token_id=tokenizer.eos_token_id,
+                )
+            response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            response_text = response[len(prompt):].strip()
+
+            is_coherent, reason = check_coherence(model, tokenizer, response_text, device)
+            if not is_coherent:
+                generation_broken = True
                 break
 
-    model.eval()
+        if generation_broken:
+            return False, {"rejected": True, "reason": "breaks_general_generation"}
 
-    generation_broken = False
-    for prompt in benign_prompts[:2]:
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=256).to(device)
-        with torch.no_grad():
-            outputs = model.generate(
-                **inputs, max_new_tokens=max_benign_tokens,
-                do_sample=False, pad_token_id=tokenizer.eos_token_id,
-            )
-        response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        response_text = response[len(prompt):].strip()
+        behavior_broken = False
+        indicators = BEHAVIOR_INDICATORS.get(expected_behavior, BEHAVIOR_INDICATORS["refusal"])
 
-        is_coherent, reason = check_coherence(model, tokenizer, response_text, device)
-        if not is_coherent:
-            generation_broken = True
-            break
+        for prompt in test_prompts[:num_test_prompts]:
+            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=256).to(device)
+            with torch.no_grad():
+                outputs = model.generate(
+                    **inputs, max_new_tokens=max_test_tokens,
+                    do_sample=False, pad_token_id=tokenizer.eos_token_id,
+                )
+            response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            response_text = response[len(prompt):].strip()
 
-    if generation_broken:
+            if refusal_classifier is not None and expected_behavior == "refusal":
+                result = refusal_classifier.classify(response_text, prompt)
+                has_behavior = result.is_refusal
+            else:
+                has_behavior = any(ind in response.lower() for ind in indicators)
+
+            if not has_behavior:
+                behavior_broken = True
+                break
+
+        return behavior_broken, {
+            "validated": behavior_broken,
+            "generation_intact": True,
+            "behavior_broken": behavior_broken,
+        }
+    finally:
         with torch.no_grad():
             for name, param in model.named_parameters():
                 if name == param_name:
                     param.copy_(original_value)
                     break
-        return False, {"rejected": True, "reason": "breaks_general_generation"}
-
-    behavior_broken = False
-    indicators = BEHAVIOR_INDICATORS.get(expected_behavior, BEHAVIOR_INDICATORS["refusal"])
-
-    for prompt in test_prompts[:num_test_prompts]:
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=256).to(device)
-        with torch.no_grad():
-            outputs = model.generate(
-                **inputs, max_new_tokens=max_test_tokens,
-                do_sample=False, pad_token_id=tokenizer.eos_token_id,
-            )
-        response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        response_text = response[len(prompt):].strip()
-
-        if refusal_classifier is not None and expected_behavior == "refusal":
-            result = refusal_classifier.classify(response_text, prompt)
-            has_behavior = result.is_refusal
-        else:
-            has_behavior = any(ind in response.lower() for ind in indicators)
-
-        if not has_behavior:
-            behavior_broken = True
-            break
-
-    with torch.no_grad():
-        for name, param in model.named_parameters():
-            if name == param_name:
-                param.copy_(original_value)
-                break
-
-    return behavior_broken, {
-        "validated": behavior_broken,
-        "generation_intact": True,
-        "behavior_broken": behavior_broken,
-    }
 
 
 __all__ = [

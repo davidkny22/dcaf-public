@@ -18,6 +18,7 @@ from typing import Dict, List, Any, Callable, Optional
 from dataclasses import dataclass, field
 
 from dcaf.ablation.methods import ModelStateManager
+from dcaf.core.defaults import HIGH_CONSISTENCY, TAU_ABS
 
 
 @dataclass
@@ -67,7 +68,7 @@ def cross_validate(
     model,
     state_manager: ModelStateManager,
     test_functions: Dict[str, Callable[..., float]],
-    impact_threshold: float = 0.1,
+    impact_threshold: float = TAU_ABS,
     test_kwargs: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> CrossValidationResult:
     """
@@ -132,7 +133,7 @@ def cross_validate_batch(
     model,
     state_manager: ModelStateManager,
     test_functions: Dict[str, Callable[..., float]],
-    impact_threshold: float = 0.1,
+    impact_threshold: float = TAU_ABS,
     test_kwargs: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> List[CrossValidationResult]:
     """
@@ -162,7 +163,7 @@ def cross_validate_batch(
 
 def filter_consistent(
     results: List[CrossValidationResult],
-    min_consistency: float = 0.8,
+    min_consistency: float = HIGH_CONSISTENCY,
 ) -> List[CrossValidationResult]:
     """
     Filter to only results with high consistency.

@@ -153,8 +153,11 @@ def run_activation_analysis(
     # Find primary target-side delta for state manager
     safety_delta_name = next(
         (d for d in available_deltas if "t1_prefopt_target" in d),
-        next((d for d in available_deltas if "target" in d),
+        next((d for d in available_deltas if "t2_sft_target" in d),
+             next((d for d in available_deltas
+                   if "target" in d and "anti" not in d and "negated" not in d),
              next((d for d in available_deltas if "safe" in d), available_deltas[0]))
+    )
     )
     safety_delta = delta_store.load_delta(safety_delta_name)
 
@@ -218,12 +221,13 @@ def run_activation_analysis(
 
     # Count passing threshold
     passing_count = sum(1 for r in results.values() if r.C_A >= tau_A)
+    component_count = summary.get("count", len(results))
 
     # Log results
     logger.info("\n" + "=" * 60)
     logger.info("RESULTS")
     logger.info("=" * 60)
-    logger.info(f"Total components: {summary['count']}")
+    logger.info(f"Total components: {component_count}")
     logger.info(f"Passing τ_A={tau_A}: {passing_count}")
     logger.info(f"Mean C_A: {summary.get('mean_C_A', 0):.4f}")
     logger.info(f"Max C_A: {summary.get('max_C_A', 0):.4f}")
@@ -243,10 +247,13 @@ def run_activation_analysis(
         torch.cuda.empty_cache()
 
     return {
-        "total_components": summary["count"],
+        "total_components": component_count,
         "passing_threshold": passing_count,
         "threshold": tau_A,
         "summary": summary,
+        "component_confidences": {
+            comp: result.C_A for comp, result in results.items()
+        },
         "top_components": [
             {
                 "component": comp,

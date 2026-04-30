@@ -134,6 +134,7 @@ class TestFullPipelineE2E:
 
         tri = TriangulatedConfidence.compute(C_W=C_W, C_A=C_A, C_G=C_G)
         uc = UnifiedConfidence.compute(C_W=C_W, C_A=C_A, C_G=C_G, path_count=2)
+        assert tri.value > 0
 
         final = classify_final(
             "L5H3", I_detect=0.9, I_decide=0.3, I_eval=0.1,

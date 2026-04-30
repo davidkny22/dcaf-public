@@ -544,12 +544,8 @@ class SafeRLHFLoader:
             # Get any safe response
             if sample["is_response_0_safe"]:
                 safe = sample["response_0"]
-                # The "corresponding" unsafe response would be response_1
-                unsafe_id = 1
             elif sample["is_response_1_safe"]:
                 safe = sample["response_1"]
-                # The "corresponding" unsafe response would be response_0
-                unsafe_id = 0
             else:
                 continue  # Both unsafe, skip
 

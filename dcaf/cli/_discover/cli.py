@@ -135,7 +135,39 @@ def run_discovery(args: argparse.Namespace) -> Dict[str, Any]:
     S_W: Dict[Any, float] = {}
     S_A: Dict[Any, float] = {}
     S_G: Dict[Any, float] = {}
-    param_names_list: Optional[List[str]] = None
+    canonical_param_names: Optional[List[str]] = None
+    if args.weight or args.activation or args.gradient:
+        all_delta_params = set()
+        for delta_name in delta_store.list_deltas():
+            all_delta_params.update(delta_store.load_delta(delta_name).keys())
+        canonical_param_names = sorted(all_delta_params)
+        name_to_canonical_index = {
+            name: idx for idx, name in enumerate(canonical_param_names)
+        }
+    else:
+        name_to_canonical_index = {}
+
+    def remap_indices(
+        ids: Set[Any],
+        scores: Dict[Any, float],
+        source_names: Optional[List[str]],
+    ) -> tuple[Set[Any], Dict[Any, float]]:
+        if not source_names:
+            return ids, scores
+        source_to_name = {
+            idx: name for idx, name in enumerate(source_names)
+        }
+        remapped_ids: Set[Any] = set()
+        remapped_scores: Dict[Any, float] = {}
+        for idx in ids:
+            name = source_to_name.get(idx)
+            if name in name_to_canonical_index:
+                remapped_ids.add(name_to_canonical_index[name])
+        for idx, score in scores.items():
+            name = source_to_name.get(idx)
+            if name in name_to_canonical_index:
+                remapped_scores[name_to_canonical_index[name]] = score
+        return remapped_ids, remapped_scores
 
     # ========== H_W: Weight Discovery ==========
     if args.weight:
@@ -150,8 +182,16 @@ def run_discovery(args: argparse.Namespace) -> Dict[str, Any]:
             tau_sig=args.tau_sig,
             tau_base=args.tau_base,
         )
-        if param_names_list is None:
-            param_names_list = w_names
+        H_W = {
+            name_to_canonical_index[name]
+            for name in H_W
+            if name in name_to_canonical_index
+        }
+        S_W = {
+            name_to_canonical_index[name]: score
+            for name, score in S_W.items()
+            if name in name_to_canonical_index
+        }
         logger.info(f"H_W: {len(H_W)} parameters discovered")
 
     # ========== H_A: Activation Discovery ==========
@@ -174,8 +214,7 @@ def run_discovery(args: argparse.Namespace) -> Dict[str, Any]:
             probe_size=args.probe_size,
             device=device,
         )
-        if param_names_list is None:
-            param_names_list = a_names
+        H_A, S_A = remap_indices(H_A, S_A, a_names)
         logger.info(f"H_A: {len(H_A)} parameters discovered")
 
     # ========== H_G: Gradient Discovery ==========
@@ -196,8 +235,7 @@ def run_discovery(args: argparse.Namespace) -> Dict[str, Any]:
             tau_grad=args.tau_grad,
             device=device,
         )
-        if param_names_list is None:
-            param_names_list = g_names
+        H_G, S_G = remap_indices(H_G, S_G, g_names)
         logger.info(f"H_G: {len(H_G)} parameters discovered")
 
     # ========== Integration ==========
@@ -227,7 +265,7 @@ def run_discovery(args: argparse.Namespace) -> Dict[str, Any]:
             "beta_path": args.beta_path,
         },
         beta_path=args.beta_path,
-        param_names=param_names_list,
+        param_names=canonical_param_names,
     )
 
     # Save

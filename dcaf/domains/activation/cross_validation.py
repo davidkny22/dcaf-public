@@ -108,10 +108,15 @@ def cross_validate_criteria(
         total_combined_confidence / len(cross_validated) if cross_validated else 0.0
     )
 
+    cross_validated_params = {item["parameter"] for item in cross_validated}
+    cross_validated_components = {item["component"] for item in cross_validated}
+
     return {
         "weight_only": len(matching_params) - len(cross_validated),
-        "activation_only": len(matching_components) - len(cross_validated),
+        "activation_only": len(matching_components) - len(cross_validated_components),
         "cross_validated": len(cross_validated),
+        "cross_validated_components": len(cross_validated_components),
+        "cross_validated_params": len(cross_validated_params),
         "cross_validated_items": cross_validated,
         "avg_combined_confidence": avg_combined_confidence,
     }
@@ -144,11 +149,12 @@ def map_component_to_parameters(
             f"layers.{layer_num}.feed_forward",
             f"h.{layer_num}.mlp",
         ]
-    elif "H" in component_id:
+    elif "H" in component_id or "_ATTN" in component_id:
         patterns = [
             f"layers.{layer_num}.self_attn",
             f"layers.{layer_num}.attention",
             f"h.{layer_num}.attn",
+            f"gpt_neox.layers.{layer_num}.attention",
         ]
     else:
         patterns = [f"layers.{layer_num}"]
@@ -190,9 +196,7 @@ def param_to_component(param_name: str) -> str:
     if 'mlp' in param_name.lower() or 'feed_forward' in param_name.lower():
         return f"L{layer_num}_MLP"
     elif 'attn' in param_name.lower() or 'attention' in param_name.lower():
-        # For attention, we use L{N}_ATTN for entire attention block
-        # Could be more granular (Q/K/V/O) if needed
-        return f"L{layer_num}_ATTN"
+        return f"L{layer_num}H"
     else:
         # Catch-all for layer norm, etc.
         return f"L{layer_num}"
