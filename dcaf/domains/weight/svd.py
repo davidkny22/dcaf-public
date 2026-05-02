@@ -9,7 +9,6 @@ def:svd-decomposition-cluster-deltas:
 These diagnostics are optional metadata and do not enter the confidence formula.
 """
 
-from typing import Optional
 
 import torch
 import torch.nn.functional as F

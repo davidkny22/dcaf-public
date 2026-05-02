@@ -13,13 +13,12 @@ Total triple budget B_triple (default 100), prioritizing high discovery-count
 components.
 """
 
-from typing import Dict, List, Any, Callable, Optional
 from dataclasses import dataclass, field
 from itertools import combinations
+from typing import Any, Callable, Dict, List, Optional
 
 from dcaf.ablation.methods import ModelStateManager
 from dcaf.ablation.superadditivity import (
-    InteractionRequirement,
     InteractionType,
     classify_interaction_requirement,
 )

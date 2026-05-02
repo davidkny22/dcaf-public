@@ -13,19 +13,15 @@ Implements the DCAFTrainer class, which:
 Production use goes through TrainingOrchestrator in dcaf.training.variants.
 """
 
-from typing import Any, Dict, Set, List, Optional, Tuple, Callable
 import gc
-import json
-import uuid
-from datetime import datetime
-from pathlib import Path
-import numpy as np
+import logging
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Set
+
 import torch
 from torch.utils.data import DataLoader
-from transformers import PreTrainedModel, PreTrainedTokenizer
-from dataclasses import dataclass
-import logging
 from tqdm import tqdm
+from transformers import PreTrainedModel, PreTrainedTokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -271,8 +267,10 @@ class DCAFTrainer:
             (model is also restored to peak state).
         """
         from dcaf.training.peak_tracking import (
-            PeakTrackingState, PeakTrackingConfig,
-            update_peak_tracking, finalize_peak_tracking,
+            PeakTrackingConfig,
+            PeakTrackingState,
+            finalize_peak_tracking,
+            update_peak_tracking,
         )
 
         epochs = epochs if epochs is not None else self.config.num_train_epochs
@@ -399,6 +397,14 @@ class DCAFTrainer:
 
                 if max_steps > 0 and step >= max_steps:
                     break
+
+            # Flush any remaining accumulated gradients
+            if step % self.config.sft_gradient_accumulation_steps != 0:
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.config.max_grad_norm
+                )
+                optimizer.step()
+                optimizer.zero_grad()
         finally:
             pbar.close()
             del optimizer
@@ -469,7 +475,7 @@ class DCAFTrainer:
             Dictionary mapping parameter names to their post-training values.
             If peak tracking is enabled, these are the peak checkpoint weights.
         """
-        from trl import CPOTrainer, CPOConfig
+        from trl import CPOConfig, CPOTrainer
 
         epochs = epochs if epochs is not None else self.config.num_train_epochs
         max_steps = max_steps if max_steps is not None else self.config.max_steps
@@ -643,7 +649,7 @@ class DCAFTrainer:
             Dictionary mapping parameter names to post-training values.
             If peak tracking is enabled, these are the peak checkpoint weights.
         """
-        from dcaf.training.anti_trainer import create_negated_simpo_trainer, cleanup_trainer
+        from dcaf.training.anti_trainer import cleanup_trainer, create_negated_simpo_trainer
 
         epochs = epochs if epochs is not None else self.config.num_train_epochs
         max_steps = max_steps if max_steps is not None else self.config.max_steps
@@ -779,7 +785,7 @@ class DCAFTrainer:
             Dictionary mapping parameter names to post-training values.
             If peak tracking is enabled, these are the peak checkpoint weights.
         """
-        from dcaf.training.anti_trainer import create_negated_simpo_trainer, cleanup_trainer
+        from dcaf.training.anti_trainer import cleanup_trainer, create_negated_simpo_trainer
 
         epochs = epochs if epochs is not None else self.config.num_train_epochs
         max_steps = max_steps if max_steps is not None else self.config.max_steps

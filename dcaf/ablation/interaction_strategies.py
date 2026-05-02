@@ -14,18 +14,18 @@ Total pair budget B_pair (default 300). Pairs found by multiple strategies are
 prioritized when the union exceeds the budget.
 """
 
-from typing import Dict, List, Set, Any, Callable, Optional, Tuple
-from dataclasses import dataclass, field
-from abc import ABC, abstractmethod
 import random
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from dcaf.core.defaults import EPSILON_OPP, EPSILON_TRI, TAU_ABS, TAU_EDGE
 from dcaf.ablation.methods import ModelStateManager
 from dcaf.ablation.superadditivity import (
+    InteractionType,
     SuperadditivityResult,
     test_superadditivity,
-    InteractionType,
 )
+from dcaf.core.defaults import EPSILON_OPP, EPSILON_TRI, TAU_ABS, TAU_EDGE
 
 
 @dataclass
