@@ -1390,182 +1390,7 @@ Aggregate the six components using the same power mean as LRS:
 with $p = 0.5$, $\varepsilon = 0.05$, uniform weights. All six components are clamped to $[0, 1]$ before aggregation, matching the LRS convention. If the convergence prerequisite fails, validation components are 0 and DCS bottoms out through the power mean.
 \end{definition}
 
-\begin{definition}[Dimensionality Assessment]
-\label{def:dimensionality-assessment}
-After consensus extraction, assess whether the behavior is single-direction or multi-dimensional:
-\begin{enumerate}[nosep]
-\item Collect all signal directions at layer $L$: $\{d^{(L)}_i\}$ for $i \in \mathcal{T}^+ \cup \mathcal{T}^-$ (flip $\mathcal{T}^-$ signs for consistent orientation).
-\item Run PCA on this set of direction vectors.
-\item Classify:
-\end{enumerate}
-\begin{equation}
-\text{dim\_type}(L) = \begin{cases}
-\text{single\_direction} & \text{if } \text{PCA}_1 > 0.8 \\
-\text{multi\_direction} & \text{if } \text{PCA}_1 \leq 0.8 \text{ and } \text{DCS}(L) \geq 0.4 \\
-\text{nonlinear} & \text{if } \text{DCS}(L) < 0.4 \text{ with adequate signal effectiveness}
-\end{cases}
-\end{equation}
-where $\text{PCA}_1$ is the fraction of variance explained by the first principal component. For $\text{multi\_direction}$, report $n_{\text{directions}}$ = number of PCs needed for 90\% cumulative variance; each PC receives its own DCS validation and composition analysis. For $\text{nonlinear}$, trigger nonlinear diagnostics (\S\ref{app:nonlinear}).
-\end{definition}
-
-\subsubsection{Layer Trajectory Analysis}
-\label{sec:layer-trajectory}
-
-DCS is computed for every layer $L \in \{0, \ldots, n_{\text{layers}}-1\}$. The resulting curve reveals where the behavior lives in the network.
-
-\begin{definition}[Trajectory Metrics]
-\label{def:trajectory-metrics}
-\begin{align}
-L_{\text{emerge}} &= \min\{L : \text{DCS}(L) > \tau_{\text{dcs-peak}}\} & &\text{(emergence layer)} \\
-L^* &= \arg\max_L \text{DCS}(L) & &\text{(peak layer)} \\
-\text{DCS}^* &= \text{DCS}(L^*) & &\text{(peak DCS)} \\
-\text{stab}(L) &= \cos(d^{(L)}_{\text{consensus}},\, d^{(L+1)}_{\text{consensus}}) & &\text{(direction stability)}
-\end{align}
-where stability is computed for adjacent layers both having $\text{DCS} > \tau_{\text{dcs-peak}}$ (default: 0.5). The stable range is the maximal contiguous set of layers with $\text{stab}(L) > \tau_{\text{stab}}$ (default: 0.9).
-\end{definition}
-
-\begin{definition}[Trajectory Shape Classification]
-\label{def:trajectory-shape}
-Smooth the DCS curve with a moving average (window $= w_{\text{traj}}$, default 3). Find local maxima and minima. Classify in priority order:
-\begin{enumerate}[nosep]
-\item \textbf{multi\_peak}: Two or more local maxima separated by a trough $> 0.15$.
-\item \textbf{sharp\_crystallization}: DCS jumps from $< 0.3$ to $> 0.7$ within 2--3 layers.
-\item \textbf{early\_peak\_late\_fade}: Peak in first 60\% of layers, DCS decreases $> 0.2$ toward output.
-\item \textbf{gradual\_emergence}: Default---DCS increases monotonically across $> 5$ layers.
-\end{enumerate}
-\end{definition}
-
-\begin{remark}[Multi-Peak Handling]
-\label{rem:multi-peak-handling}
-When $\text{multi\_peak}$ is detected, compute cosine between peak consensus directions. If $> 0.8$, the same direction re-emerges (recomputed after MLP transformation); report \texttt{peak\_alignment}. If $< 0.5$, genuinely different representations exist at different depths; produce independent composition analyses for each peak.
-\end{remark}
-
-\subsubsection{Signal Diagnostics}
-\label{sec:signal-diagnostics}
-
-\begin{definition}[Effective Signal Count]
-\label{def:effective-signal-count}
-At the peak layer $L^*$:
-\begin{equation}
-n_{\text{eff}} = |\{i : |\cos(d^{(L^*)}_i, d^{(L^*)}_{\text{consensus}})| > \tau_{\text{eff-cos}} \;\text{and}\; \text{eff}(i) > \tau_{\text{eff-min}}\}|
-\end{equation}
-with $\tau_{\text{eff-cos}} = 0.5$ and $\tau_{\text{eff-min}} = 0.2$. If $n_{\text{eff}} < 3$, flag \texttt{convergence\_quality: `dominated'} with the dominant signal ID.
-\end{definition}
-
-\begin{remark}[Signal Diagnostic Patterns]
-\label{rem:signal-diagnostic-patterns}
-Four characteristic patterns:
-\begin{itemize}[nosep]
-\item \textbf{Universal agreement} ($\cos > 0.8$ for all signals): Rock-solid direction with highest confidence.
-\item \textbf{Anti/Negated deviation} ($t_4/t_5$ or $t_9/t_{10}$ low $\cos$): Gradient ascent finds different pathways than direct training.
-\item \textbf{SFT deviation} ($t_2$ or $t_7$ low $\cos$): Supervised signals encode differently than preference signals.
-\item \textbf{Cluster asymmetry} ($\mathcal{T}^+$ high coherence, $\mathcal{T}^-$ low): One behavioral pole is more coherent than the other.
-\end{itemize}
-\end{remark}
-
-\subsubsection{Hierarchical Composition Analysis}
-\label{sec:composition-analysis}
-
-\begin{remark}[Pipeline Placement]
-\label{rem:composition-pipeline-placement}
-Composition analysis runs at Step 15.5, \emph{after} circuit graph reconstruction (\S\ref{sec:circuit-graph}), because it requires the confirmed component set $\mathcal{H}_{\text{conf}}$. It consumes the global direction from Step 6.5 and the component output deltas already captured as activation deltas.
-\end{remark}
-
-\begin{definition}[Component Contribution to Global Direction]
-\label{def:direction-contribution}
-The residual stream at layer $L$ is the sum of all component outputs up to that layer:
-\begin{equation}
-R^{(L)}_{\text{post}} = \text{embed} + \sum_{\ell \leq L} \bigl(\text{attn\_out}^{(\ell)} + \text{mlp\_out}^{(\ell)}\bigr)
-\end{equation}
-Each component's contribution to the global direction at the peak layer:
-\begin{equation}
-\text{contrib}(k) = \langle \Delta\text{output}^{(k)},\; d^{(L^*)}_{\text{consensus}} \rangle
-\end{equation}
-where $\Delta\text{output}^{(k)}$ is the mean difference in component $k$'s output between target and opposite prompts. This is a signed scalar: positive means the component pushes toward the target behavior, negative means it opposes.
-\end{definition}
-
-\begin{definition}[Normalized Contribution and Reconstruction Fidelity]
-\label{def:contribution-normalization}
-Normalized contribution fraction:
-\begin{equation}
-\text{contrib\_frac}(k) = \frac{\text{contrib}(k)}{\sum_{k'} |\text{contrib}(k')|}
-\end{equation}
-Positive contributions sum to $> 0.5$, negative to $< 0.5$, total absolute values to 1.0. Reconstruction fidelity measures how well the confirmed circuit explains the global direction:
-\begin{equation}
-\text{fidelity} = \cos\!\left(\frac{\sum_{k \in \mathcal{H}_{\text{conf}}} \text{contrib}(k) \cdot d^{(k)}}{\|\sum_{k \in \mathcal{H}_{\text{conf}}} \text{contrib}(k) \cdot d^{(k)}\|},\;\; d^{(L^*)}_{\text{consensus}}\right)
-\end{equation}
-If fidelity $< \tau_{\text{fidelity}}$ (default: 0.8), flag \texttt{composition\_gap: true}---the confirmed circuit does not fully explain the global direction. Components outside $\mathcal{H}_{\text{conf}}$ may contribute, or nonlinear interactions may be present.
-\end{definition}
-
-\begin{remark}[Suppression-Dominant Composition]
-\label{rem:suppression-dominant-composition}
-If total negative contribution exceeds total positive contribution, flag \texttt{composition\_balance: `suppression\_dominant'}. The model's default is to suppress the behavior; specific components override that suppression. For intervention, amplifying positive contributors may be more effective than ablating negative ones.
-\end{remark}
-
-\begin{remark}[Computational Cost]
-\label{rem:composition-computational-cost}
-Composition analysis requires zero additional forward passes. Component output deltas ($\Delta\text{output}^{(k)}$) are already captured as activation deltas in Step 5. The analysis is dot products and summation in post-processing.
-\end{remark}
-
-\subsubsection{Intervention Specification}
-\label{sec:intervention-spec}
-
-\begin{definition}[Global Steering Specification]
-\label{def:global-steering}
-The primary intervention: inject the consensus direction into the residual stream at the peak layer.
-\begin{equation}
-\hat{R}^{(L^*)} = R^{(L^*)} + \alpha \cdot d^{(L^*)}_{\text{consensus}} \quad \text{at token position } s^*
-\end{equation}
-The recommended $\alpha$ range is estimated by applying $\alpha \in \{\alpha_1, \ldots, \alpha_m\}$ (default: $\{0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0\}$) and selecting $[\alpha_{\min}, \alpha_{\max}]$ where the behavioral metric exceeds 0.8 of the maximum achievable effect and capability degradation (perplexity increase) remains below $\tau_{\text{ppl}}$ (default: 10\%).
-\end{definition}
-
-\begin{definition}[Component-Level Alignment to Global Direction]
-\label{def:component-global-alignment}
-For each confirmed component $k$, measure convergent validation between the component's optimized steering vector and its compositional role:
-\begin{equation}
-\text{align\_global}(k) = \cos(v^*_{k,+},\; d^{(L^*)}_{\text{consensus}})
-\end{equation}
-High alignment validates that component-level steering and global direction extraction converge on the same representation.
-\end{definition}
-
-\begin{definition}[Global vs.\ Component Comparison]
-\label{def:global-vs-component}
-Measure effectiveness of global steering (single direction at peak layer) versus top-$n$ component steering (steering vectors at the $n$ highest-contribution components). Report:
-\begin{equation}
-\text{recommendation} = \begin{cases}
-\text{global} & \text{if global effectiveness} > \text{component effectiveness} \\
-\text{component} & \text{if component effectiveness} > \text{global effectiveness} \\
-\text{hybrid} & \text{if within 5\% of each other}
-\end{cases}
-\end{equation}
-Global steering is simpler to deploy; component steering may have fewer side effects.
-\end{definition}
-
-\subsubsection{Edge Cases and Failure Modes}
-\label{sec:direction-edge-cases}
-
-\begin{definition}[Direction Status Classification]
-\label{def:direction-status}
-\begin{equation}
-\text{direction\_status} = \begin{cases}
-\text{validated} & \text{if DCS}^* \geq 0.4 \text{ and } n_{\text{eff}} \geq 3 \\
-\text{insufficient\_training} & \text{if mean eff}(i) \text{ is low} \\
-\text{nonlinear\_or\_absent} & \text{if adequate eff but DCS}^* < 0.4 \text{ at all layers}
-\end{cases}
-\end{equation}
-\end{definition}
-
-\begin{remark}[Failure Mode Catalogue]
-\label{rem:direction-failure-mode-catalogue}
-All failure modes are reported as output fields, never silent failures:
-\begin{itemize}[nosep]
-\item \texttt{opposition\_failure}: High $\text{coh}_+$ and $\text{coh}_-$ but low $\text{opp}$. Both training directions activated a shared ``safety-relevant content'' axis; the behavioral split happens downstream or orthogonally. Check whether per-component directions show opposition even when global directions do not.
-\item \texttt{convergence\_quality: `dominated'}: $n_{\text{eff}} < 3$. DCS is technically valid but convergent evidence is weaker than the headline number suggests.
-\item \texttt{functional\_validation: `failed'}: High convergence components, low $\text{pred}$. Direction is statistically clean but functionally meaningless. Recommend expanding behavioral prompt set.
-\item \texttt{composition\_gap}: $\text{fidelity} < \tau_{\text{fidelity}}$. Confirmed circuit does not fully explain the global direction. Favor global steering over component-level steering.
-\item \texttt{composition\_balance: `suppression\_dominant'}: Total negative contribution exceeds total positive. Default model behavior is to suppress; specific components override.
-\end{itemize}
-\end{remark}
+After consensus extraction, the DCS curve across layers reveals where the behavior crystallizes in the network. The peak DCS layer $L^* = \arg\max_L \text{DCS}(L)$ identifies where the behavioral direction is strongest. Composition analysis connects the circuit graph back to the global direction: each confirmed component's contribution is measured as $\text{contrib}(k) = \langle \Delta\text{output}^{(k)}, d^{(L^*)}_{\text{consensus}} \rangle$, where $\Delta\text{output}^{(k)}$ is the mean difference in component $k$'s output between target and opposite prompts. Full details of layer trajectory analysis, signal diagnostics, composition decomposition, intervention specification, and failure modes appear in Appendix~\ref{app:direction-synthesis-detail}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Training Diagnostics}
@@ -3296,7 +3121,7 @@ Under Option A, $\mathcal{M}_0 = \mathcal{M}_{\text{pre}}$ and the instruction-t
 \item \textbf{Functional Classification:} For confirmed components, classify by probe-type ablation impact
 \item \textbf{Graph Reconstruction:} Apply edge-discovery methods (including ablation-induced activation changes)
 \item \textbf{Bidirectional Steering:} Optimize $v^*_{k,+}$ and $v^*_{k,-}$; compute alignments $\alpha_+, \alpha_-, \alpha_\pm$; validate causal roles; further validate edges
-\item[15.5] \textbf{Composition Analysis (\S\ref{sec:composition-analysis}):} Per-component contribution to global direction; composition ranking; reconstruction fidelity; intervention specification (global steering, component alignment, comparison and recommendation).
+\item[15.5] \textbf{Composition Analysis (\S\ref{app:composition-analysis}):} Per-component contribution to global direction; composition ranking; reconstruction fidelity; intervention specification (global steering, component alignment, comparison and recommendation).
 \item \textbf{Build Output:} Assemble all results including \texttt{directions} block.
 \end{enumerate}
 
@@ -3453,6 +3278,180 @@ With dominance + deviation + disagreement + mean, all patterns are fully composa
 \end{itemize}
 
 This approach avoids hand-coded categories, allowing dynamic pattern discovery as researchers explore the data. Scatter plots of $C_W$ vs. $C_A$ colored by $C_G$, or clustering by dominance/deviation profiles, reveal natural component groupings.
+\end{remark}
+
+\section{Direction Synthesis: Extended Detail}
+\label{app:direction-synthesis-detail}
+
+\subsection{Dimensionality Assessment}
+
+\begin{definition}[Dimensionality Assessment]
+\label{def:dimensionality-assessment}
+After consensus extraction, assess whether the behavior is single-direction or multi-dimensional:
+\begin{enumerate}[nosep]
+\item Collect all signal directions at layer $L$: $\{d^{(L)}_i\}$ for $i \in \mathcal{T}^+ \cup \mathcal{T}^-$ (flip $\mathcal{T}^-$ signs for consistent orientation).
+\item Run PCA on this set of direction vectors.
+\item Classify:
+\end{enumerate}
+\begin{equation}
+\text{dim\_type}(L) = \begin{cases}
+\text{single\_direction} & \text{if } \text{PCA}_1 > 0.8 \\
+\text{multi\_direction} & \text{if } \text{PCA}_1 \leq 0.8 \text{ and } \text{DCS}(L) \geq 0.4 \\
+\text{nonlinear} & \text{if } \text{DCS}(L) < 0.4 \text{ with adequate signal effectiveness}
+\end{cases}
+\end{equation}
+where $\text{PCA}_1$ is the fraction of variance explained by the first principal component. For $\text{multi\_direction}$, report $n_{\text{directions}}$ = number of PCs needed for 90\% cumulative variance; each PC receives its own DCS validation and composition analysis. For $\text{nonlinear}$, trigger nonlinear diagnostics (\S\ref{app:nonlinear}).
+\end{definition}
+
+\subsection{Layer Trajectory Analysis}
+\label{app:layer-trajectory}
+
+DCS is computed for every layer $L \in \{0, \ldots, n_{\text{layers}}-1\}$. The resulting curve reveals where the behavior lives in the network.
+
+\begin{definition}[Trajectory Metrics]
+\label{def:trajectory-metrics}
+\begin{align}
+L_{\text{emerge}} &= \min\{L : \text{DCS}(L) > \tau_{\text{dcs-peak}}\} & &\text{(emergence layer)} \\
+L^* &= \arg\max_L \text{DCS}(L) & &\text{(peak layer)} \\
+\text{DCS}^* &= \text{DCS}(L^*) & &\text{(peak DCS)} \\
+\text{stab}(L) &= \cos(d^{(L)}_{\text{consensus}},\, d^{(L+1)}_{\text{consensus}}) & &\text{(direction stability)}
+\end{align}
+where stability is computed for adjacent layers both having $\text{DCS} > \tau_{\text{dcs-peak}}$ (default: 0.5). The stable range is the maximal contiguous set of layers with $\text{stab}(L) > \tau_{\text{stab}}$ (default: 0.9).
+\end{definition}
+
+\begin{definition}[Trajectory Shape Classification]
+\label{def:trajectory-shape}
+Smooth the DCS curve with a moving average (window $= w_{\text{traj}}$, default 3). Find local maxima and minima. Classify in priority order:
+\begin{enumerate}[nosep]
+\item \textbf{multi\_peak}: Two or more local maxima separated by a trough $> 0.15$.
+\item \textbf{sharp\_crystallization}: DCS jumps from $< 0.3$ to $> 0.7$ within 2--3 layers.
+\item \textbf{early\_peak\_late\_fade}: Peak in first 60\% of layers, DCS decreases $> 0.2$ toward output.
+\item \textbf{gradual\_emergence}: Default---DCS increases monotonically across $> 5$ layers.
+\end{enumerate}
+\end{definition}
+
+\begin{remark}[Multi-Peak Handling]
+When $\text{multi\_peak}$ is detected, compute cosine between peak consensus directions. If $> 0.8$, the same direction re-emerges (recomputed after MLP transformation); report \texttt{peak\_alignment}. If $< 0.5$, genuinely different representations exist at different depths; produce independent composition analyses for each peak.
+\end{remark}
+
+\subsection{Signal Diagnostics}
+\label{app:signal-diagnostics}
+
+\begin{definition}[Effective Signal Count]
+\label{def:effective-signal-count}
+At the peak layer $L^*$:
+\begin{equation}
+n_{\text{eff}} = |\{i : |\cos(d^{(L^*)}_i, d^{(L^*)}_{\text{consensus}})| > \tau_{\text{eff-cos}} \;\text{and}\; \text{eff}(i) > \tau_{\text{eff-min}}\}|
+\end{equation}
+with $\tau_{\text{eff-cos}} = 0.5$ and $\tau_{\text{eff-min}} = 0.2$. If $n_{\text{eff}} < 3$, flag \texttt{convergence\_quality: `dominated'} with the dominant signal ID.
+\end{definition}
+
+\begin{remark}[Signal Diagnostic Patterns]
+Four characteristic patterns:
+\begin{itemize}[nosep]
+\item \textbf{Universal agreement} ($\cos > 0.8$ for all signals): Rock-solid direction with highest confidence.
+\item \textbf{Anti/Negated deviation} ($t_4/t_5$ or $t_9/t_{10}$ low $\cos$): Gradient ascent finds different pathways than direct training.
+\item \textbf{SFT deviation} ($t_2$ or $t_7$ low $\cos$): Supervised signals encode differently than preference signals.
+\item \textbf{Cluster asymmetry} ($\mathcal{T}^+$ high coherence, $\mathcal{T}^-$ low): One behavioral pole is more coherent than the other.
+\end{itemize}
+\end{remark}
+
+\subsection{Hierarchical Composition Analysis}
+\label{app:composition-analysis}
+
+Composition analysis runs after circuit graph reconstruction, because it requires the confirmed component set $\mathcal{H}_{\text{conf}}$. It consumes the global direction from DCS computation and the component output deltas already captured as activation deltas.
+
+\begin{definition}[Component Contribution to Global Direction]
+\label{def:direction-contribution}
+The residual stream at layer $L$ is the sum of all component outputs up to that layer:
+\begin{equation}
+R^{(L)}_{\text{post}} = \text{embed} + \sum_{\ell \leq L} \bigl(\text{attn\_out}^{(\ell)} + \text{mlp\_out}^{(\ell)}\bigr)
+\end{equation}
+Each component's contribution to the global direction at the peak layer:
+\begin{equation}
+\text{contrib}(k) = \langle \Delta\text{output}^{(k)},\; d^{(L^*)}_{\text{consensus}} \rangle
+\end{equation}
+where $\Delta\text{output}^{(k)}$ is the mean difference in component $k$'s output between target and opposite prompts. This is a signed scalar: positive means the component pushes toward the target behavior, negative means it opposes.
+\end{definition}
+
+\begin{definition}[Normalized Contribution and Reconstruction Fidelity]
+\label{def:contribution-normalization}
+Normalized contribution fraction:
+\begin{equation}
+\text{contrib\_frac}(k) = \frac{\text{contrib}(k)}{\sum_{k'} |\text{contrib}(k')|}
+\end{equation}
+Positive contributions sum to $> 0.5$, negative to $< 0.5$, total absolute values to 1.0. Reconstruction fidelity measures how well the confirmed circuit explains the global direction:
+\begin{equation}
+\text{fidelity} = \cos\!\left(\frac{\sum_{k \in \mathcal{H}_{\text{conf}}} \text{contrib}(k) \cdot d^{(k)}}{\|\sum_{k \in \mathcal{H}_{\text{conf}}} \text{contrib}(k) \cdot d^{(k)}\|},\;\; d^{(L^*)}_{\text{consensus}}\right)
+\end{equation}
+If fidelity $< \tau_{\text{fidelity}}$ (default: 0.8), flag \texttt{composition\_gap: true}---the confirmed circuit does not fully explain the global direction.
+\end{definition}
+
+\begin{remark}[Suppression-Dominant Composition]
+If total negative contribution exceeds total positive contribution, flag \texttt{composition\_balance: `suppression\_dominant'}. The model's default is to suppress the behavior; specific components override that suppression. For intervention, amplifying positive contributors may be more effective than ablating negative ones.
+\end{remark}
+
+\begin{remark}[Computational Cost]
+Composition analysis requires zero additional forward passes. Component output deltas ($\Delta\text{output}^{(k)}$) are already captured as activation deltas. The analysis is dot products and summation in post-processing.
+\end{remark}
+
+\subsection{Intervention Specification}
+\label{app:intervention-spec}
+
+\begin{definition}[Global Steering Specification]
+\label{def:global-steering}
+The primary intervention: inject the consensus direction into the residual stream at the peak layer.
+\begin{equation}
+\hat{R}^{(L^*)} = R^{(L^*)} + \alpha \cdot d^{(L^*)}_{\text{consensus}} \quad \text{at token position } s^*
+\end{equation}
+The recommended $\alpha$ range is estimated by applying $\alpha \in \{\alpha_1, \ldots, \alpha_m\}$ (default: $\{0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0\}$) and selecting $[\alpha_{\min}, \alpha_{\max}]$ where the behavioral metric exceeds 0.8 of the maximum achievable effect and capability degradation (perplexity increase) remains below $\tau_{\text{ppl}}$ (default: 10\%).
+\end{definition}
+
+\begin{definition}[Component-Level Alignment to Global Direction]
+\label{def:component-global-alignment}
+For each confirmed component $k$, measure convergent validation between the component's optimized steering vector and its compositional role:
+\begin{equation}
+\text{align\_global}(k) = \cos(v^*_{k,+},\; d^{(L^*)}_{\text{consensus}})
+\end{equation}
+High alignment validates that component-level steering and global direction extraction converge on the same representation.
+\end{definition}
+
+\begin{definition}[Global vs.\ Component Comparison]
+\label{def:global-vs-component}
+Measure effectiveness of global steering (single direction at peak layer) versus top-$n$ component steering (steering vectors at the $n$ highest-contribution components). Report:
+\begin{equation}
+\text{recommendation} = \begin{cases}
+\text{global} & \text{if global effectiveness} > \text{component effectiveness} \\
+\text{component} & \text{if component effectiveness} > \text{global effectiveness} \\
+\text{hybrid} & \text{if within 5\% of each other}
+\end{cases}
+\end{equation}
+Global steering is simpler to deploy; component steering may have fewer side effects.
+\end{definition}
+
+\subsection{Edge Cases and Failure Modes}
+\label{app:direction-edge-cases}
+
+\begin{definition}[Direction Status Classification]
+\label{def:direction-status}
+\begin{equation}
+\text{direction\_status} = \begin{cases}
+\text{validated} & \text{if DCS}^* \geq 0.4 \text{ and } n_{\text{eff}} \geq 3 \\
+\text{insufficient\_training} & \text{if mean eff}(i) \text{ is low} \\
+\text{nonlinear\_or\_absent} & \text{if adequate eff but DCS}^* < 0.4 \text{ at all layers}
+\end{cases}
+\end{equation}
+\end{definition}
+
+\begin{remark}[Failure Mode Catalogue]
+All failure modes are reported as output fields, never silent failures:
+\begin{itemize}[nosep]
+\item \texttt{opposition\_failure}: High $\text{coh}_+$ and $\text{coh}_-$ but low $\text{opp}$. Both training directions activated a shared ``safety-relevant content'' axis; the behavioral split happens downstream or orthogonally.
+\item \texttt{convergence\_quality: `dominated'}: $n_{\text{eff}} < 3$. DCS is technically valid but convergent evidence is weaker than the headline number suggests.
+\item \texttt{functional\_validation: `failed'}: High convergence components, low $\text{pred}$. Direction is statistically clean but functionally meaningless.
+\item \texttt{composition\_gap}: $\text{fidelity} < \tau_{\text{fidelity}}$. Confirmed circuit does not fully explain the global direction.
+\item \texttt{composition\_balance: `suppression\_dominant'}: Total negative contribution exceeds total positive. Default model behavior is to suppress; specific components override.
+\end{itemize}
 \end{remark}
 
 \section{Nonlinear Diagnostics}
