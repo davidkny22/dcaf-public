@@ -1,12 +1,12 @@
 """
-DCAF Trainer — core weight-delta training loop (§1, Def 1.10).
+DCAF Trainer — core weight-delta training loop (sec:foundations; def:weight-delta).
 
 Implements the DCAFTrainer class, which:
 
 1. Checkpoints W0 (the baseline model).
 2. Trains on each signal type (SFT, SimPO, Anti, Negated) to produce W1.
-3. Computes weight deltas ΔW = W1 - W0 per signal (Def 1.10).
-4. Selects peak checkpoints via stability-confirmed peak detection (Def 1.11).
+3. Computes weight deltas ΔW relative to M0 per signal (def:weight-delta).
+4. Selects peak checkpoints via stability-confirmed peak detection (def:peak-checkpoint).
 5. Identifies candidate safety-circuit parameters by delta magnitude.
 6. Validates candidates via ablation testing.
 
@@ -244,6 +244,7 @@ class DCAFTrainer:
         callback: Optional[Callable[[int, float], None]] = None,
         negate_loss: bool = False,
         use_peak_tracking: Optional[bool] = None,
+        replay_dataloader: Optional[DataLoader] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         Train model on a specific safety principle.
@@ -257,6 +258,12 @@ class DCAFTrainer:
             negate_loss: If True, negate loss for gradient ascent (Anti-SFT mode)
             use_peak_tracking: Whether to use peak checkpoint tracking.
                 If None, uses config.use_peak_checkpoint.
+            replay_dataloader: Optional DataLoader with general-purpose data for
+                experience replay during gradient ascent (Anti/Negated signals).
+                When provided and negate_loss=True, each step mixes the negated
+                behavioral loss with a standard cross-entropy loss on replay data,
+                weighted by config.replay_fraction. Prevents catastrophic
+                unlearning per Remark [Catastrophic Unlearning Mitigation].
 
         Returns:
             Dictionary mapping parameter names to their post-training values.
@@ -306,6 +313,12 @@ class DCAFTrainer:
         losses = []
         step = 0
 
+        # Experience replay setup for gradient ascent (Anti/Negated signals)
+        replay_iter = None
+        if negate_loss and replay_dataloader is not None:
+            replay_iter = iter(replay_dataloader)
+            logger.info(f"  Experience replay enabled (fraction={self.config.replay_fraction})")
+
         # Compute total steps for progress bar
         if max_steps > 0:
             total_steps = max_steps
@@ -336,6 +349,24 @@ class DCAFTrainer:
                     # Anti-SFT: Negate loss for gradient ascent
                     if negate_loss:
                         loss = -loss
+
+                    # Experience replay: mix in standard CE on general data
+                    if replay_iter is not None:
+                        try:
+                            replay_batch = next(replay_iter)
+                        except StopIteration:
+                            replay_iter = iter(replay_dataloader)
+                            replay_batch = next(replay_iter)
+                        replay_ids = replay_batch["input_ids"].to(self.device)
+                        replay_mask = replay_batch["attention_mask"].to(self.device)
+                        replay_labels = replay_batch.get("labels", replay_ids).to(self.device)
+                        replay_outputs = self.model(
+                            input_ids=replay_ids,
+                            attention_mask=replay_mask,
+                            labels=replay_labels,
+                        )
+                        replay_loss = replay_outputs.loss / self.config.sft_gradient_accumulation_steps
+                        loss = loss + self.config.replay_fraction * replay_loss
 
                     # Backward pass
                     loss.backward()
@@ -543,6 +574,7 @@ class DCAFTrainer:
         dataloader: DataLoader,
         epochs: Optional[int] = None,
         max_steps: Optional[int] = None,
+        replay_dataloader: Optional[DataLoader] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         Anti-SFT training: Push model AWAY from target distribution.
@@ -559,6 +591,8 @@ class DCAFTrainer:
             dataloader: DataLoader with training data
             epochs: Number of training epochs (default from config)
             max_steps: Override epochs if > 0 (default from config)
+            replay_dataloader: Optional DataLoader with general-purpose data for
+                experience replay to prevent catastrophic unlearning.
 
         Returns:
             Dictionary mapping parameter names to post-training values
@@ -569,7 +603,8 @@ class DCAFTrainer:
             dataloader=dataloader,
             epochs=epochs,
             max_steps=max_steps,
-            negate_loss=True
+            negate_loss=True,
+            replay_dataloader=replay_dataloader,
         )
 
     def train_anti_simpo(
@@ -923,6 +958,7 @@ class DCAFTrainer:
         dataloader: DataLoader,
         epochs: Optional[int] = None,
         max_steps: Optional[int] = None,
+        use_peak_tracking: Optional[bool] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         Train on neutral language data to establish baseline weight changes.
@@ -946,12 +982,18 @@ class DCAFTrainer:
             logger.info(f"Training language baseline for {epochs} epoch(s)")
         logger.info("(This captures format learning, NOT safety learning)")
 
-        # Use the same training logic but explicitly disable peak tracking.
-        # Language baseline is T0 (neutral) — peak tracking is only for T+/T-.
+        do_peak = (
+            use_peak_tracking
+            if use_peak_tracking is not None
+            else getattr(self.config, "use_peak_checkpoint_t11", False)
+        )
+
+        # T11 is the neutral anti-confound/control run. It is exempt from
+        # peak tracking by default, but can opt in for exact artifact parity.
         return self.train_principle(
             "_language_baseline", dataloader,
             epochs=epochs, max_steps=max_steps,
-            use_peak_tracking=False,
+            use_peak_tracking=do_peak,
         )
 
     def compute_language_delta(

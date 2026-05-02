@@ -1,10 +1,10 @@
 """
-Phase 3: Refinement (§11, Def 11.8 refinement rules).
+Phase 3: Refinement (sec:phase-3-refinement; def:refinement-rules).
 
 Targeted follow-up based on Phase 1 and Phase 2 results:
   1. Solo × Solo pairs: test pairwise among H_solo components
   2. No-solo pair members: test H_solo x H_not-solo components
-  3. Hessian pairs with low ablation: flag for triple testing in Phase 5
+  3. Gradient-screened pairs with low ablation: flag for triple testing in Phase 5
   4. Minimal sufficient subsets from significant Strategy D clusters
 
 Implements leave-one-out elimination to find the minimal critical subset

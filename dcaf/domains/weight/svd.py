@@ -1,7 +1,7 @@
 """
 SVD diagnostics for projection weight deltas.
 
-Def 4.5 (§4 Weight Analysis, SVD Decomposition of Cluster Deltas):
+def:svd-decomposition-cluster-deltas:
   Spectral decomposition of aggregated cluster deltas reveals:
   - rank1(proj): how concentrated the weight change is (rank-1 fraction)
   - spec_opp(proj): whether T+ and T- oppose along the primary axis of change
@@ -44,11 +44,13 @@ def compute_svd_diagnostics(
     # Top singular values
     top_3 = [S_p[i].item() for i in range(min(3, len(S_p)))]
 
-    # Spectral opposition: do T+ and T- primary directions oppose?
-    if len(Vh_p) > 0 and len(Vh_m) > 0:
-        spectral_opp = -F.cosine_similarity(
-            Vh_p[0].unsqueeze(0), Vh_m[0].unsqueeze(0),
-        ).item()
+    # Spectral opposition: do T+ and T- primary rank-1 changes oppose?
+    # Uses rank-1 outer products (sign-invariant) rather than raw singular
+    # vectors (which have arbitrary sign from SVD).
+    if len(U_p) > 0 and len(Vh_p) > 0 and len(U_m) > 0 and len(Vh_m) > 0:
+        rank1_plus = torch.outer(U_p[:, 0], Vh_p[0]).flatten().unsqueeze(0)
+        rank1_minus = torch.outer(U_m[:, 0], Vh_m[0]).flatten().unsqueeze(0)
+        spectral_opp = -F.cosine_similarity(rank1_plus, rank1_minus).item()
     else:
         spectral_opp = 0.0
 

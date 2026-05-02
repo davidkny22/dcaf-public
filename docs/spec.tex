@@ -54,7 +54,7 @@
 
 \begin{abstract}
 \noindent
-Mechanistic interpretability has produced powerful methods for discovering neural circuits, yet existing approaches typically rely on a single attribution technique, lack calibrated confidence scores, and operate at head-level or edge-level granularity---missing the projection-level structure (e.g., $W_Q$, $W_K$, $W_V$, $W_O$) where behavioral signatures diverge within the same component. We introduce the Differential Circuit Analysis Framework (DCAF), which treats training signals as controlled perturbation experiments: by training a model under 11 paired behavioral objectives (5 target-reinforcing, 5 opposite-reinforcing, 1 neutral baseline) and triangulating evidence across weight deltas, activation patterns, and latent geometry, DCAF discovers candidate circuit components, maps their causal connections, and classifies their functional roles. Key technical contributions include: (i)~the 11-paired-objective probe configuration that uses preference optimization, supervised fine-tuning, gradient ascent, and sequential training as orthogonal discovery signals; (ii)~three complementary discovery paths (weight-based, activation-based, gradient-based) integrated through a triangulated confidence score; (iii)~the Direction Convergence Score (DCS), which measures cross-signal agreement on behavioral directions in the residual stream; and (iv)~a 7-phase ablation protocol with interaction discovery and adaptive tiered functional classification. The framework is formulated in an architecture-agnostic manner with a complete transformer instantiation. A reference implementation is publicly available at \url{https://github.com/davidkny22/dcaf-public}.
+Mechanistic interpretability has produced powerful methods for discovering the circuits through which neural networks implement specific behaviors. However, existing methods are post-hoc and single-signal: they analyze a fixed model using one attribution technique, producing circuit hypotheses without confidence scores, cross-method validation, or projection-level granularity. We introduce the Differential Circuit Analysis Framework (DCAF), which uses training itself as the discovery intervention, running 11 paired behavioral objectives as controlled perturbation experiments and triangulating evidence across weight deltas, activation patterns, and latent geometry to identify candidate circuit components prospectively. Candidates are then validated through a 7-phase ablation protocol that discovers individual, pairwise, and triple component interactions and assigns functional classifications. The framework operates at projection-level granularity, distinguishing behavioral signatures within individual attention heads and MLP layers, and produces confidence scores grounded in convergent evidence from three independent measurement domains. DCAF is formulated independently of model architecture, with a complete transformer instantiation and a public reference implementation at \url{https://github.com/davidkny22/dcaf-public}. This work addresses the field's documented need for principled multi-signal circuit validation. More broadly, prospective circuit identification through training perturbations opens a path toward targeted protection of safety-critical components, mechanistic auditing of fine-tuned models, and evidence-based alignment engineering.
 \end{abstract}
 
 \tableofcontents
@@ -75,9 +75,9 @@ DCAF operationalizes these independently established threads---projection-level 
 
 The key contributions of this work are:
 \begin{enumerate}[nosep]
-\item \textbf{Multi-signal training perturbation protocol.} We systematize the insights of \citet{prakash2024finetuning} and \citet{tigges2024consistent} into a complete 11-signal configuration that uses preference optimization, supervised fine-tuning, gradient ascent, and sequential training as orthogonal discovery probes, extending contrastive methods \citep{panickssery2024caa,arditi2024refusal} from inference-time prompt contrasts to training-time signal contrasts.
+\item \textbf{Multi-signal training perturbation protocol.} We systematize the insights of \citet{prakash2024finetuning} and \citet{tigges2024consistent} into a complete 11-signal configuration that uses preference optimization, supervised fine-tuning, gradient ascent, and sequential training as complementary discovery probes, extending contrastive methods \citep{panickssery2024caa,arditi2024refusal} from inference-time prompt contrasts to training-time signal contrasts.
 
-\item \textbf{Triangulated confidence scoring.} We implement the triangulation principle called for by \citet{long2025triangulation} and \citet{sharkey2025openproblems} through a specific operationalization across weight, activation, and geometric domains, producing calibrated confidence scores that reflect convergent evidence.
+\item \textbf{Triangulated confidence scoring.} We implement the triangulation principle called for by \citet{long2025triangulation} and \citet{sharkey2025openproblems} through a specific operationalization across weight, activation, and geometric domains, producing confidence scores that reflect convergent evidence.
 
 \item \textbf{Projection-level discovery at scale.} We operationalize at scale the QK/OV decomposition introduced by \citet{elhage2021mathematical}, extending it to gated MLP architectures and integrating it into an automated discovery pipeline alongside parameter-space methods such as APD \citep{braun2025apd}.
 
@@ -121,7 +121,7 @@ DCAF extends contrastive methods from inference-time prompt contrasts to trainin
 
 This cluster represents the closest prior art to DCAF's training-perturbation methodology. \citet{nanda2023grokking} provided the earliest example of using training trajectories to expose circuit formation via progress measures for grokking. \citet{prakash2024finetuning} introduced Cross-Model Activation Patching (CMAP) and showed that fine-tuning enhances existing mechanisms---the most direct precedent for training-as-discovery. \citet{tigges2024consistent} demonstrated that LLM circuit analyses are consistent across training and scale, providing evidence that training dynamics are a reliable lens. \citet{wang2025finetuning} tracked edge changes across fine-tuning checkpoints. \citet{singh2024induction} used optogenetics-inspired causal interventions throughout training to study induction head formation.
 
-DCAF systematizes these insights into a complete multi-signal protocol, using 11 paired training objectives as orthogonal probes. Where prior work uses training dynamics as a post-hoc analytical lens, DCAF treats each training signal as a controlled perturbation experiment whose weight deltas, activation changes, and geometric effects are triangulated into confidence scores.
+DCAF systematizes these insights into a complete multi-signal protocol, using 11 paired training objectives as complementary probes. Where prior work uses training dynamics as a post-hoc analytical lens, DCAF treats each training signal as a controlled perturbation experiment whose weight deltas, activation changes, and geometric effects are triangulated into confidence scores.
 
 \subsection{Weight-Space and Parameter-Level Analysis}
 \label{sec:weight-space-parameter-level-analysis}
@@ -897,9 +897,9 @@ where $\sigma_1$ is the largest singular value of the cluster delta matrix. Meas
 
 \textbf{Spectral opposition:}
 \begin{equation}
-\text{spec\_opp}(\text{proj}) = -\cos\!\left(V_{h,+}[0],\; V_{h,-}[0]\right)
+\text{spec\_opp}(\text{proj}) = -\cos\!\left(\text{flatten}(u^+_1 \cdot (v^+_1)^T),\; \text{flatten}(u^-_1 \cdot (v^-_1)^T)\right)
 \end{equation}
-where $V_{h,+}[0]$ and $V_{h,-}[0]$ are the top right singular vectors of the target and opposite cluster deltas respectively. Measures whether $\mathcal{T}^+$ and $\mathcal{T}^-$ oppose along the primary axis of change. Range $[-1,1]$; values near $1$ indicate clean opposition along the dominant change direction.
+where $u^+_1, v^+_1$ and $u^-_1, v^-_1$ are the top left and right singular vectors of the target and opposite cluster deltas respectively. Comparing rank-1 reconstructions rather than raw singular vectors eliminates the sign ambiguity inherent in SVD (singular vectors have arbitrary sign; outer products do not). Range $[-1,1]$; values near $1$ indicate clean opposition along the dominant change direction.
 \end{definition}
 
 \begin{remark}[SVD Interpretation Patterns]
@@ -1017,7 +1017,7 @@ Activation confidence is inherently component-level throughout; hooks capture at
 
 \begin{remark}[Probe Construction: Matched Contrast Pairs]
 \label{rem:probe-construction-matched-contrast-pairs}
-Effective probe construction requires \textbf{matched contrast pairs} where behavior-positive and behavior-negative inputs differ by exactly 1--3 tokens, holding all other features constant (topic, length, syntax, vocabulary, position). This isolates the behavioral mechanism from confounds, following the ABC counterfactual design introduced by \citet{wang2023ioi}. For example, in IOI circuit discovery, behavior-positive probes use standard sentences with a repeated subject name (``Then, Mary and John went to the store. John gave a drink to''), while behavior-negative probes replace the repeated name with a novel third name (``Then, Mary and Chris went to the store. Chris gave a drink to'')---a single-word pivot that removes the duplicate-token signal while preserving all other structure. The same principle applies across behaviors: safety probes should differ only in the presence of harmful content, truthfulness probes only in factual accuracy, and so on. Poorly controlled probes---where positive and negative inputs differ in length, topic, or style---may cause DCAF to identify components that encode those confounds rather than the target behavior.
+Effective probe construction ideally uses \textbf{matched contrast pairs} where behavior-positive and behavior-negative inputs differ minimally, holding confounding features constant (topic, length, syntax, vocabulary, position). The gold standard is the ABC counterfactual design \citep{wang2023ioi}, where inputs differ by exactly 1--3 tokens. For example, in IOI circuit discovery, behavior-negative probes replace a single repeated name with a novel third name, removing the duplicate-token signal while preserving all other structure. When minimal-pair construction is not feasible for a given behavior, probes should be matched by distribution: balanced for length, topic, style, and format, so that the behavioral variable is the primary axis of variation. Poorly controlled probes---where positive and negative inputs differ in length, topic, or style---may cause DCAF to identify components that encode those confounds rather than the target behavior.
 \end{remark}
 
 \begin{remark}[No Opposition in Activation Domain]
@@ -1809,6 +1809,10 @@ For attention heads, track information flow:
 \end{equation}
 Measures whether downstream heads attend to positions where upstream components wrote.
 \end{definition}
+
+\begin{remark}[Screening vs.\ Causal Edge Evidence]
+Methods 1, 4, and 5 (activation correlation, gradient correlation, attention flow) are \textbf{screening heuristics} that propose candidate edges for testing. They identify statistical associations, not causal relationships. Only Methods 2 and 3 (targeted ablation and targeted steering) produce \textbf{causal edge evidence}: they intervene on one component and measure the effect on another. The causal edge definition below uses only Methods 2 and 3.
+\end{remark}
 
 \begin{definition}[Causal Edge]
 \label{def:causal-edge}
@@ -2820,7 +2824,7 @@ $n^{(\text{proj})}$ & Count: how many signals changed this projection significan
 $C^{(\text{proj})}_W$ & Projection-level weight confidence \\
 $C^{(k)}_W$ & Component-level weight confidence: $\max_{\text{proj}} C^{(\text{proj})}_W$ \\
 $\text{rank1}(\text{proj})$ & Rank-1 fraction: $\sigma_1^2 / \sum_i \sigma_i^2$ of cluster delta SVD \\
-$\text{spec\_opp}(\text{proj})$ & Spectral opposition: $-\cos(V_{h,+}[0], V_{h,-}[0])$ \\
+$\text{spec\_opp}(\text{proj})$ & Spectral opposition: $-\cos(\text{flatten}(u^+_1 (v^+_1)^T), \text{flatten}(u^-_1 (v^-_1)^T))$ \\
 $\sigma_1, \sigma_2, \sigma_3$ & Top singular values of cluster delta matrix \\
 $V_{h,+}[0], V_{h,-}[0]$ & Top right singular vectors of target/opposite cluster deltas \\
 \bottomrule

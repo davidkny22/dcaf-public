@@ -1,13 +1,14 @@
 """
-Phase 2: Seven parallel pair/group interaction discovery strategies (§11, Def 11.6-11.12).
+Phase 2: Seven parallel pair/group interaction discovery strategies
+(sec:phase-2-seven-parallel-strategies).
 
-Def 11.6  Strategy A: Graph-adjacent pairs (connected by circuit edges with weight > τ_E)
-Def 11.7  Strategy B: Gradient-based interaction screening (Hessian approximation)
-Def 11.8  Strategy C: Activation correlation pairs (top cosine-similar pairs)
-Def 11.9  Strategy D: Hierarchical clustering (average linkage, threshold 0.7)
-Def 11.10 Strategy E: Opposition grouping (|opp_degree(k1) - opp_degree(k2)| < ε_opp)
-Def 11.11 Strategy F: Cross-layer attention head composition
-Def 11.12 Strategy G: Confidence-weighted random sampling (n=200)
+def:strategy-a-graph-adjacent-pairs: Graph-adjacent pairs.
+def:gradient-screening: Gradient-based interaction screening.
+def:strategy-c-activation-correlation-pairs: Activation correlation pairs.
+def:strategy-d-hierarchical-clustering: Hierarchical clustering.
+def:opposition-grouping: Opposition grouping.
+def:strategy-f-cross-layer-composition: Cross-layer attention head composition.
+def:strategy-g-random-sampling: Confidence-weighted random sampling.
 
 Total pair budget B_pair (default 300). Pairs found by multiple strategies are
 prioritized when the union exceeds the budget.
@@ -94,7 +95,7 @@ class InteractionStrategy(ABC):
 
 class StrategyA_GraphAdjacent(InteractionStrategy):
     """
-    Strategy A: Graph-adjacent pairs (Def 11.6).
+    Strategy A: Graph-adjacent pairs (def:strategy-a-graph-adjacent-pairs).
 
     Components connected by preliminary circuit edges (from activation flow or
     gradient correlation) with edge weight > τ_E are paired. Tests connected
@@ -114,7 +115,7 @@ class StrategyA_GraphAdjacent(InteractionStrategy):
         **kwargs,
     ) -> StrategyResult:
         """
-        Test pairs connected by circuit edges with weight > τ_E (Def 11.6).
+        Test pairs connected by circuit edges with weight > τ_E (def:strategy-a-graph-adjacent-pairs).
 
         Args:
             candidates: Candidate parameters
@@ -165,7 +166,7 @@ class StrategyA_GraphAdjacent(InteractionStrategy):
 
 class StrategyB_GradientScreening(InteractionStrategy):
     """
-    Strategy B: Gradient-based interaction screening (Def 11.7).
+    Strategy B: Gradient-based interaction screening (def:gradient-screening).
 
     Ablate component k1 and measure how much k2's gradient changes:
         interact(k1, k2) = ||∇_{k2} L|_{k1 ablated} - ∇_{k2} L|_{intact}||
@@ -186,11 +187,11 @@ class StrategyB_GradientScreening(InteractionStrategy):
         **kwargs,
     ) -> StrategyResult:
         """
-        Test gradient-predicted pairs (Def 11.7).
+        Test gradient-predicted pairs (def:gradient-screening).
 
         Args:
             candidates: Candidate parameters
-            gradient_pairs: [(param1, param2, hessian_value), ...] sorted by importance
+            gradient_pairs: [(param1, param2, gradient_interaction_value), ...] sorted by importance
             top_n: Number of top pairs to test
 
         Returns:
@@ -237,7 +238,7 @@ class StrategyB_GradientScreening(InteractionStrategy):
 
 class StrategyC_ActivationCorrelation(InteractionStrategy):
     """
-    Strategy C: Activation correlation pairs (Def 11.8).
+    Strategy C: Activation correlation pairs (def:strategy-c-activation-correlation-pairs).
 
     Build a vector per component by concatenating activation deltas
     ΔA^(k,π)_i across all behavioral signals and probe types. Compute
@@ -256,7 +257,7 @@ class StrategyC_ActivationCorrelation(InteractionStrategy):
         **kwargs,
     ) -> StrategyResult:
         """
-        Test correlation-based clusters (Def 11.8).
+        Test correlation-based clusters (def:strategy-c-activation-correlation-pairs).
 
         Args:
             candidates: Candidate parameters
@@ -305,7 +306,7 @@ class StrategyC_ActivationCorrelation(InteractionStrategy):
 
 class StrategyD_HierarchicalClustering(InteractionStrategy):
     """
-    Strategy D: Hierarchical clustering (Def 11.9).
+    Strategy D: Hierarchical clustering (def:strategy-d-hierarchical-clustering).
 
     Using the same correlation matrix as Strategy C, apply hierarchical
     clustering (average linkage, distance = 1 - correlation, threshold = 0.7).
@@ -326,7 +327,7 @@ class StrategyD_HierarchicalClustering(InteractionStrategy):
         **kwargs,
     ) -> StrategyResult:
         """
-        Test hierarchical clusters (Def 11.9).
+        Test hierarchical clusters (def:strategy-d-hierarchical-clustering).
 
         Args:
             candidates: Candidate parameters
@@ -375,7 +376,7 @@ class StrategyD_HierarchicalClustering(InteractionStrategy):
 
 class StrategyE_OppositionGrouping(InteractionStrategy):
     """
-    Strategy E: Opposition grouping (Def 11.10).
+    Strategy E: Opposition grouping (def:opposition-grouping).
 
     Pair components where:
         similar(k1, k2) = 1[|opp_degree(k1) - opp_degree(k2)| < ε_opp]
@@ -398,7 +399,7 @@ class StrategyE_OppositionGrouping(InteractionStrategy):
         **kwargs,
     ) -> StrategyResult:
         """
-        Test opposition-similar pairs (Def 11.10).
+        Test opposition-similar pairs (def:opposition-grouping).
 
         Args:
             candidates: Candidate parameters
@@ -466,7 +467,7 @@ class StrategyE_OppositionGrouping(InteractionStrategy):
 
 class StrategyF_CrossLayerComposition(InteractionStrategy):
     """
-    Strategy F: Cross-layer attention head composition (Def 11.11).
+    Strategy F: Cross-layer attention head composition (def:strategy-f-cross-layer-composition).
 
     Pair attention heads from different layers. Cross-layer composition is a
     known circuit motif (induction heads, IOI circuits). MLP components are
@@ -485,7 +486,7 @@ class StrategyF_CrossLayerComposition(InteractionStrategy):
         **kwargs,
     ) -> StrategyResult:
         """
-        Test cross-layer attention head pairs (Def 11.11).
+        Test cross-layer attention head pairs (def:strategy-f-cross-layer-composition).
 
         Args:
             candidates: Candidate parameters
@@ -558,7 +559,7 @@ class StrategyF_CrossLayerComposition(InteractionStrategy):
 
 class StrategyG_RandomSampling(InteractionStrategy):
     """
-    Strategy G: Confidence-weighted random sampling (Def 11.12).
+    Strategy G: Confidence-weighted random sampling (def:strategy-g-random-sampling).
 
     Sample n_samples=200 pairs with probability proportional to C^(k) (unified
     confidence). Serves as false-negative safeguard — catches unexpected
@@ -578,7 +579,7 @@ class StrategyG_RandomSampling(InteractionStrategy):
         **kwargs,
     ) -> StrategyResult:
         """
-        Confidence-weighted random pairs (Def 11.12).
+        Confidence-weighted random pairs (def:strategy-g-random-sampling).
 
         Args:
             candidates: Candidate parameters
@@ -659,7 +660,7 @@ def run_all_strategies(
     strategy_kwargs: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, StrategyResult]:
     """
-    Run all 7 Phase 2 strategies (Def 11.6-11.12).
+    Run all 7 Phase 2 strategies (sec:phase-2-seven-parallel-strategies).
 
     All strategies run independently and results are pooled. When the union of
     candidate pairs exceeds B_pair (default 300), pairs found by multiple

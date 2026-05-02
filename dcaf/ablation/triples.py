@@ -1,11 +1,11 @@
 """
-Phase 5: Triple detection for GATE patterns (§11, Def 11.14-11.15).
+Phase 5: Triple detection for GATE patterns (sec:phase-5-triple-detection).
 
-Def 11.14 (Approach 1): For each Strategy B pair with low behavioral ablation
+def:triple-approach-gradient-pairs: For each Strategy B pair with low behavioral ablation
 impact, add third members: components with discovery_count ≥ 2 from Phase 4,
 and high-confidence components (top of H_cand by C^(k)).
 
-Def 11.15 (Approach 2): Components with no individual or pair effect; combine
+def:triple-approach-no-effect-components: Components with no individual or pair effect; combine
 with top 5 H_solo components as triples. Also form triples among no-effect
 components with similar opposition profiles (|opp_degree delta| < 0.1).
 

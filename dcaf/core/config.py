@@ -24,35 +24,35 @@ from dcaf.core.defaults import (
 class DCAFConfig:
     """Configuration for Differential Circuit Analysis Framework.
 
-    Organized by spec sections:
-      §2:  Discovery thresholds (tau_sig, tau_base, tau_act, tau_grad, tau_comp)
-      §4:  Weight domain (alpha, tau_opp, beta, q)
-      §6:  Geometry domain (p, lambda_reg)
-      §8:  Confidence (beta_path, w, epsilon, tau_W/A/G/unified)
-      §9:  Circuit graph (tau_E)
-      §11: Ablation (pair_budget, triple_budget, synergy_epsilon)
-      §11.5: Classification (r_strict_primary, r_relaxed_primary, r_aux, tau_abs, tau_gap)
+    Organized by spec labels:
+      def:threshold-parameters: discovery thresholds
+      sec:weight-analysis: weight domain parameters
+      sec:geometry-analysis: geometry domain parameters
+      sec:unified-confidence: confidence and candidate selection
+      sec:circuit-graph: circuit graph
+      sec:ablation: ablation budgets and interaction thresholds
+      sec:adaptive-tiered-functional-classification: classification thresholds
     """
 
-    # === §2: DISCOVERY THRESHOLDS ===
+    # === def:threshold-parameters: DISCOVERY THRESHOLDS ===
     tau_sig: float = TAU_SIG
     tau_base: float = TAU_BASE
     tau_act: float = TAU_ACT
     tau_grad: float = TAU_GRAD
     tau_comp: float = TAU_COMP
 
-    # === §4: WEIGHT DOMAIN PARAMETERS ===
+    # === sec:weight-analysis: WEIGHT DOMAIN PARAMETERS ===
     alpha: float = ALPHA
     tau_opp: float = TAU_OPP
     beta: float = BETA
     q: int = Q
 
-    # === §6: GEOMETRY PARAMETERS ===
+    # === sec:geometry-analysis: GEOMETRY PARAMETERS ===
     p: float = P_LRS
     epsilon: float = EPSILON_TRI
     lambda_reg: float = LAMBDA_CONTRASTIVE
 
-    # === §8: CONFIDENCE & CANDIDATE SELECTION ===
+    # === sec:unified-confidence: CONFIDENCE & CANDIDATE SELECTION ===
     w: int = W_DISCOVERY
     beta_path: float = BETA_PATH
     tau_W: float = TAU_W_DEFAULT
@@ -60,17 +60,17 @@ class DCAFConfig:
     tau_G: float = TAU_G_DEFAULT
     tau_unified: float = TAU_UNIFIED_DEFAULT
 
-    # === §9: CIRCUIT GRAPH ===
+    # === sec:circuit-graph: CIRCUIT GRAPH ===
     tau_E: float = TAU_EDGE
 
-    # === §11: ABLATION ===
+    # === sec:ablation: ABLATION ===
     pair_budget: int = PAIR_BUDGET
     triple_budget: int = TRIPLE_BUDGET
     synergy_epsilon: float = SYNERGY_EPSILON
     epsilon_opp: float = EPSILON_OPP
     tau_orphan: float = TAU_ORPHAN
 
-    # === §11.5: ADAPTIVE TIERED CLASSIFICATION ===
+    # === sec:adaptive-tiered-functional-classification: ADAPTIVE TIERED CLASSIFICATION ===
     r_strict_primary: float = R_STRICT_PRIMARY
     r_relaxed_primary: float = R_RELAXED_PRIMARY
     r_aux: float = R_AUX
@@ -78,7 +78,7 @@ class DCAFConfig:
     tau_gap: float = TAU_GAP
     tau_ppl: float = TAU_PPL
 
-    # === PEAK CHECKPOINT (Def 1.11) ===
+    # === PEAK CHECKPOINT (def:peak-checkpoint) ===
     peak_eval_interval: int = PEAK_EVAL_INTERVAL
     peak_confirmation_window: int = PEAK_CONFIRMATION_WINDOW
     peak_stability_tolerance: float = PEAK_STABILITY_TOLERANCE
@@ -102,10 +102,14 @@ class DCAFConfig:
     warmup_steps: int = 0
     max_grad_norm: float = MAX_GRAD_NORM
     use_peak_checkpoint: bool = True
+    use_peak_checkpoint_t11: bool = False
     batch_size: int = SIMPO_BATCH_SIZE
     gradient_accumulation_steps: int = SIMPO_GRAD_ACCUM
     sft_batch_size: int = SFT_BATCH_SIZE
     sft_gradient_accumulation_steps: int = SFT_GRAD_ACCUM
+
+    # === CATASTROPHIC UNLEARNING MITIGATION (rem:catastrophic-unlearning) ===
+    replay_fraction: float = 1.0
 
 
 __all__ = ["DCAFConfig"]
