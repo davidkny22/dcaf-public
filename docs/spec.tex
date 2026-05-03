@@ -1858,138 +1858,9 @@ Partition $\mathcal{H}_{\text{cand}}$ into:
 \end{itemize}
 \end{definition}
 
-\subsubsection{Phase 2: Seven Parallel Pair/Group Strategies}
-\label{sec:phase-2-seven-parallel-strategies}
+\subsubsection{Phases 2--6: Interaction Search and Refinement}
 
-Each strategy independently identifies pairs or groups likely to interact. Results are pooled. The total number of pairs tested is capped at $B_{\text{pair}}$ (default: 300); when the union of candidate pairs from Strategies A--G exceeds this budget, pairs found by multiple strategies are prioritized, then by unified confidence of constituent components.
-
-\begin{definition}[Strategy A: Graph-Adjacent Pairs]
-\label{def:strategy-a-graph-adjacent-pairs}
-Components connected by preliminary circuit edges (from activation flow or gradient correlation in \S\ref{sec:circuit-graph}) with edge weight $> \tau_E$ are paired. Tests connected circuit segments.
-\end{definition}
-
-\begin{definition}[Strategy B: Gradient-Based Interaction Screening]
-\label{def:gradient-screening}
-Ablate component $k_1$ and measure how much $k_2$'s gradient changes:
-\begin{equation}
-\text{interact}(k_1, k_2) = \left\|\nabla_{k_2} \mathcal{L}\big|_{k_1\text{ ablated}} - \nabla_{k_2} \mathcal{L}\big|_{\text{intact}}\right\|
-\end{equation}
-This is a screening method that predicts which pairs to test via full behavioral ablation, not a direct behavioral test. Return top-$N$ interacting pairs by this score.
-\end{definition}
-
-\begin{definition}[Strategy C: Activation Correlation Pairs]
-\label{def:strategy-c-activation-correlation-pairs}
-Build a vector per component by concatenating activation deltas $\Delta A^{(k,\pi)}_i$ across all behavioral signals and probe types. Compute pairwise cosine similarity. Select the top correlated pairs (budget: $B_{\text{pair}} / 5$). Tests co-functioning components.
-\end{definition}
-
-\begin{definition}[Strategy D: Hierarchical Clustering]
-\label{def:strategy-d-hierarchical-clustering}
-Using the same correlation matrix as Strategy C, apply hierarchical clustering (average linkage, distance $= 1 - \text{correlation}$, threshold $= 0.7$). Extract clusters of size $\geq 3$. For each cluster, test collective ablation; if significant, find the minimal sufficient subset via greedy removal. Tests functional groups.
-\end{definition}
-
-\begin{definition}[Strategy E: Opposition Grouping]
-\label{def:opposition-grouping}
-Pair components where:
-\begin{equation}
-\text{similar}(k_1, k_2) = \mathbf{1}\!\left[|\text{opp\_degree}(k_1) - \text{opp\_degree}(k_2)| < \varepsilon_{\text{opp}}\right]
-\end{equation}
-where $\varepsilon_{\text{opp}} = 0.1$ (default) and $\text{opp\_degree}(k) = \max_{\text{proj} \in \mu_{\text{proj}}^{-1}(k)} \text{opp\_degree}(\text{proj})$ (already defined at projection level). Components with similar opposition profiles respond similarly to $\mathcal{T}^+$ vs.\ $\mathcal{T}^-$---likely parallel circuits implementing the same behavioral control.
-\end{definition}
-
-\begin{definition}[Strategy F: Cross-Layer Composition]
-\label{def:strategy-f-cross-layer-composition}
-Pair attention heads from different layers. Cross-layer composition is a known circuit motif (induction heads, IOI circuits). MLP components are excluded from this strategy.
-\end{definition}
-
-\begin{definition}[Strategy G: Random Sampling]
-\label{def:strategy-g-random-sampling}
-Confidence-weighted random pairs ($n_{\text{samples}} = 200$), sampling probability proportional to $C^{(k)}$. Catches unexpected interactions missed by structured strategies.
-\end{definition}
-
-\begin{remark}[Role of Random Sampling]
-\label{rem:role-of-random-sampling}
-Strategy G serves as a false-negative safeguard. Structured strategies A--F each encode specific hypotheses about interaction patterns (graph adjacency, gradient correlation, activation similarity, hierarchical clustering, opposition similarity, cross-layer composition). Interactions that violate all six hypotheses---for example, components in distant layers with dissimilar activation profiles that nonetheless gate each other---would be missed without random exploration. The confidence-weighted sampling ensures computational budget is concentrated on high-confidence candidates while maintaining coverage of the unexpected.
-\end{remark}
-
-\begin{remark}[Phase 2 Accounting]
-\label{rem:phase-2-accounting}
-For each tested pair, classify the interaction type (Definition~\ref{def:interaction-type-three}). Track which strategies found each pair. For Strategy D clusters, the minimal sufficient subset identified by greedy removal is recorded.
-\end{remark}
-
-\subsubsection{Phase 3: Refinement}
-\label{sec:phase-3-refinement}
-
-Targeted follow-up based on Phase 1 and Phase 2 results:
-
-\begin{definition}[Refinement Rules]
-\label{def:refinement-rules}
-\begin{enumerate}[nosep]
-\item \textbf{Solo $\times$ Solo pairs:} Test pairwise among $\mathcal{H}_{\text{solo}}$ components from Phase 1. Synergistic solo pairs constitute stronger circuit evidence.
-\item \textbf{No-solo pair members:} For $\mathcal{H}_{\overline{\text{solo}}}$ components found in significant Phase 2 pairs, test with other $\mathcal{H}_{\text{solo}}$ components.
-\item \textbf{Gradient-screened pairs with low ablation:} If Strategy B predicted interaction but pair ablation showed no behavioral impact, flag for triple testing in Phase 5 (a third component may be gating).
-\item \textbf{Minimal sufficient subsets} from significant Strategy D clusters are recorded for the circuit graph.
-\end{enumerate}
-\end{definition}
-
-\subsubsection{Phase 4: Cross-Validation Counting}
-\label{sec:phase-4-cross-validation-counting}
-
-\begin{definition}[Multi-Strategy Confirmation]
-\label{def:multi-strategy-confirmation}
-\begin{equation}
-\text{discovery\_count}(k) = \left|\{s \in \text{Strategies} : k \text{ found in a significant pair/group by } s\}\right|
-\end{equation}
-Components in $\mathcal{H}_{\text{solo}}$ from Phase 1 count as one strategy (\texttt{phase1\_individual}). Pair-level cross-validation is also tracked: how many strategies found each significant pair.
-\begin{itemize}[nosep]
-\item $\text{discovery\_count} \geq 2$: High-confidence circuit
-\item $\text{discovery\_count} = 1$: Re-test in different ablation contexts; validate or mark uncertain
-\end{itemize}
-\end{definition}
-
-\subsubsection{Phase 5: Triple Detection}
-\label{sec:phase-5-triple-detection}
-
-Two approaches to finding three-component gating interactions, capped at $B_{\text{triple}}$ (default: 100) total tests, prioritizing triples containing high discovery-count components.
-
-\begin{definition}[Approach 1: From Gradient-Screened Pairs]
-\label{def:triple-approach-gradient-pairs}
-For each Strategy B pair (Definition~\ref{def:gradient-screening}) with low behavioral ablation impact, add as third members: components with $\text{discovery\_count} \geq 2$ from Phase 4, and high-confidence components (top of $\mathcal{H}_{\text{cand}}$ by $C^{(k)}$).
-\end{definition}
-
-\begin{definition}[Approach 2: From No-Effect Components]
-\label{def:triple-approach-no-effect-components}
-Identify components with no individual effect (Phase 1) and no pair effect (Phase 2). Combine each with the top 5 $\mathcal{H}_{\text{solo}}$ components (by $C^{(k)}$) as triples. Also form triples among no-effect components with similar opposition profiles ($|\text{opp\_degree}(k_1) - \text{opp\_degree}(k_2)| < 0.15$).
-\end{definition}
-
-\subsubsection{Phase 6: Orphan Analysis}
-\label{sec:phase-6-orphan-analysis}
-
-\begin{definition}[Orphan Components]
-\label{def:orphan-components}
-After completing Phases 1--5, identify orphan components:
-\begin{equation}
-\mathcal{O} = \{k \in \mathcal{H}_{\text{cand}} : k \text{ not confirmed by any Phase 1--5 configuration}\}
-\end{equation}
-These components passed the unified confidence threshold ($C^{(k)} \geq \tau_{\text{unified}}$) but showed no individual effect, appeared in no significant pair, and appeared in no significant triple.
-\end{definition}
-
-\begin{definition}[High-Confidence Orphans]
-\label{def:high-confidence-orphans}
-\begin{equation}
-\mathcal{O}_{\text{high}} = \{k \in \mathcal{O} : C^{(k)} > \tau_{\text{orphan}}\}
-\end{equation}
-where $\tau_{\text{orphan}}$ is the high-confidence orphan threshold (default: 0.6).
-
-For each $k \in \mathcal{O}_{\text{high}}$: re-test paired with every $\mathcal{H}_{\text{solo}}$ component and with other $\mathcal{O}_{\text{high}}$ orphans. Orphans confirmed during retesting are promoted.
-\end{definition}
-
-\begin{definition}[Low-Confidence Orphans]
-\label{def:low-confidence-orphans}
-\begin{equation}
-\mathcal{O}_{\text{low}} = \{k \in \mathcal{O} : C^{(k)} \leq \tau_{\text{orphan}}\}
-\end{equation}
-Flag for optional exhaustive pairwise testing when computational budget allows.
-\end{definition}
+After individual testing, DCAF searches for component interactions through seven parallel strategies, each targeting a different hypothesis about how components might interact. Graph-adjacent pairs test whether connected circuit segments function together. Gradient-based screening identifies pairs where ablating one component changes the other's gradient, suggesting functional dependence. Activation correlation pairs test co-functioning components with similar activation profiles. Hierarchical clustering finds functional groups of three or more components. Opposition grouping pairs components with similar bidirectional control profiles. Cross-layer composition tests attention heads from different layers that may compose. Random sampling provides a false-negative safeguard against interactions that violate all six structured hypotheses. Results from all strategies are pooled with a total budget of $B_{\text{pair}} = 300$ pairs, prioritizing pairs found by multiple strategies. Phases 3--6 refine these results through targeted follow-up, cross-validation counting, triple detection for gating interactions ($B_{\text{triple}} = 100$), and orphan retesting. Full definitions for each strategy and phase appear in Appendix~\ref{app:ablation-detail}.
 
 \subsubsection{Phase 7: Final Classification}
 
@@ -2037,47 +1908,6 @@ $\mathcal{H}_{\text{conf}}$ includes:
 \end{itemize}
 Each confirmed element has: behavioral relevance status, probe-specific impacts $I^{(k)}_\pi$ for all probe types, functional classification via $\text{class}(k)$, and interaction metadata (SOLO/PAIR/GATE + interaction type if applicable).
 \end{definition}
-
-\subsection{Computational Complexity}
-\label{sec:ablation-computational-complexity}
-
-\begin{remark}[Ablation Budget]
-\label{rem:ablation-budget}
-The methodology distributes ablations across seven phases:
-
-\textbf{Phase 1:} Individual component ablations (one per $\mathcal{H}_{\text{cand}}$ component, typically 30--50).
-
-\textbf{Phase 2:} Seven parallel strategies with total pair budget $B_{\text{pair}}$ (default: 300). Strategies A--G propose candidate pairs independently; when the union exceeds $B_{\text{pair}}$, pairs found by multiple strategies are prioritized.
-
-\textbf{Phase 3:} Refinement---targeted follow-up from Phases 1--2 (solo$\times$solo, no-solo pair members, gradient-screened flagging).
-
-\textbf{Phase 4:} Cross-validation counting (no additional ablations, bookkeeping only).
-
-\textbf{Phase 5:} Triple detection with budget $B_{\text{triple}}$ (default: 100), from gradient-screened pairs and no-effect components.
-
-\textbf{Phase 6:} Orphan retesting---high-confidence orphans paired with solo components and other orphans. Optional exhaustive pairwise for low-confidence orphans.
-
-\textbf{Phase 7:} Final classification (no additional ablations, bookkeeping only).
-
-The total number of ablations scales with $|\mathcal{H}_{\text{cand}}|$ but remains substantially lower than exhaustive pairwise testing, which requires $|\mathcal{H}_{\text{cand}}| \times (|\mathcal{H}_{\text{cand}}| - 1) / 2$ ablations.
-\end{remark}
-
-\begin{remark}[Coverage Analysis]
-\label{rem:ablation-coverage-analysis}
-The multi-strategy approach provides comprehensive coverage:
-\begin{itemize}[nosep]
-\item All individually significant components (Phase 1)
-\item Graph-connected segments (Strategy A)
-\item Gradient-predicted interactions (Strategy B)
-\item Activation-correlated groups (Strategy C)
-\item Hierarchically clustered functional groups (Strategy D)
-\item Parallel bidirectional control circuits (Strategy E)
-\item Cross-layer attention composition (Strategy F)
-\item Random sampling for unexpected interactions (Strategy G)
-\item High-confidence orphans through targeted retesting (Phase 6)
-\end{itemize}
-Important circuits are likely discovered by multiple strategies, increasing confidence. All Phase 2 strategies can run in parallel across GPUs; gradient computation and clustering are one-time costs.
-\end{remark}
 
 \subsection{Adaptive Tiered Functional Classification}
 \label{sec:adaptive-tiered-functional-classification}
@@ -3574,6 +3404,127 @@ Split activations into train and held-out sets. Train $f_\theta$ on the training
 \end{equation}
 $\text{gen}_{\text{embed}} \approx 1$: embedding captures a generalizable structure. $\text{gen}_{\text{embed}} \ll 1$: embedding overfits to training activations.
 \end{remark}
+
+\section{Ablation Interaction Discovery: Full Protocol}
+\label{app:ablation-detail}
+
+This appendix provides full definitions for the seven parallel interaction discovery strategies (Phase 2) and the refinement phases (Phases 3--6) summarized in the main text.
+
+\subsection{Phase 2: Seven Parallel Pair/Group Strategies}
+
+Each strategy independently identifies pairs or groups likely to interact. Results are pooled. The total number of pairs tested is capped at $B_{\text{pair}}$ (default: 300); when the union of candidate pairs from Strategies A--G exceeds this budget, pairs found by multiple strategies are prioritized, then by unified confidence of constituent components.
+
+\begin{definition}[Strategy A: Graph-Adjacent Pairs]
+Components connected by preliminary circuit edges (from activation flow or gradient correlation in \S\ref{sec:circuit-graph}) with edge weight $> \tau_E$ are paired. Tests connected circuit segments.
+\end{definition}
+
+\begin{definition}[Strategy B: Gradient-Based Interaction Screening]
+Ablate component $k_1$ and measure how much $k_2$'s gradient changes:
+\begin{equation}
+\text{interact}(k_1, k_2) = \left\|\nabla_{k_2} \mathcal{L}\big|_{k_1\text{ ablated}} - \nabla_{k_2} \mathcal{L}\big|_{\text{intact}}\right\|
+\end{equation}
+This is a screening method that predicts which pairs to test via full behavioral ablation, not a direct behavioral test. Return top-$N$ interacting pairs by this score.
+\end{definition}
+
+\begin{definition}[Strategy C: Activation Correlation Pairs]
+Build a vector per component by concatenating activation deltas $\Delta A^{(k,\pi)}_i$ across all behavioral signals and probe types. Compute pairwise cosine similarity. Select the top correlated pairs (budget: $B_{\text{pair}} / 5$). Tests co-functioning components.
+\end{definition}
+
+\begin{definition}[Strategy D: Hierarchical Clustering]
+Using the same correlation matrix as Strategy C, apply hierarchical clustering (average linkage, distance $= 1 - \text{correlation}$, threshold $= 0.7$). Extract clusters of size $\geq 3$. For each cluster, test collective ablation; if significant, find the minimal sufficient subset via greedy removal. Tests functional groups.
+\end{definition}
+
+\begin{definition}[Strategy E: Opposition Grouping]
+Pair components where:
+\begin{equation}
+\text{similar}(k_1, k_2) = \mathbf{1}\!\left[|\text{opp\_degree}(k_1) - \text{opp\_degree}(k_2)| < \varepsilon_{\text{opp}}\right]
+\end{equation}
+where $\varepsilon_{\text{opp}} = 0.1$ (default) and $\text{opp\_degree}(k) = \max_{\text{proj} \in \mu_{\text{proj}}^{-1}(k)} \text{opp\_degree}(\text{proj})$. Components with similar opposition profiles respond similarly to $\mathcal{T}^+$ vs.\ $\mathcal{T}^-$---likely parallel circuits implementing the same behavioral control.
+\end{definition}
+
+\begin{definition}[Strategy F: Cross-Layer Composition]
+Pair attention heads from different layers. Cross-layer composition is a known circuit motif (induction heads, IOI circuits). MLP components are excluded from this strategy.
+\end{definition}
+
+\begin{definition}[Strategy G: Random Sampling]
+Confidence-weighted random pairs ($n_{\text{samples}} = 200$), sampling probability proportional to $C^{(k)}$. Catches unexpected interactions missed by structured strategies.
+\end{definition}
+
+\begin{remark}[Role of Random Sampling]
+Strategy G serves as a false-negative safeguard. Structured strategies A--F each encode specific hypotheses about interaction patterns (graph adjacency, gradient correlation, activation similarity, hierarchical clustering, opposition similarity, cross-layer composition). Interactions that violate all six hypotheses---for example, components in distant layers with dissimilar activation profiles that nonetheless gate each other---would be missed without random exploration. The confidence-weighted sampling ensures computational budget is concentrated on high-confidence candidates while maintaining coverage of the unexpected.
+\end{remark}
+
+\begin{remark}[Phase 2 Accounting]
+For each tested pair, classify the interaction type (Definition~\ref{def:interaction-type-three}). Track which strategies found each pair. For Strategy D clusters, the minimal sufficient subset identified by greedy removal is recorded.
+\end{remark}
+
+\subsection{Phase 3: Refinement}
+
+Targeted follow-up based on Phase 1 and Phase 2 results:
+
+\begin{definition}[Refinement Rules]
+\begin{enumerate}[nosep]
+\item \textbf{Solo $\times$ Solo pairs:} Test pairwise among $\mathcal{H}_{\text{solo}}$ components from Phase 1. Synergistic solo pairs constitute stronger circuit evidence.
+\item \textbf{No-solo pair members:} For $\mathcal{H}_{\overline{\text{solo}}}$ components found in significant Phase 2 pairs, test with other $\mathcal{H}_{\text{solo}}$ components.
+\item \textbf{Gradient-screened pairs with low ablation:} If Strategy B predicted interaction but pair ablation showed no behavioral impact, flag for triple testing in Phase 5 (a third component may be gating).
+\item \textbf{Minimal sufficient subsets} from significant Strategy D clusters are recorded for the circuit graph.
+\end{enumerate}
+\end{definition}
+
+\subsection{Phase 4: Cross-Validation Counting}
+
+\begin{definition}[Multi-Strategy Confirmation]
+\begin{equation}
+\text{discovery\_count}(k) = \left|\{s \in \text{Strategies} : k \text{ found in a significant pair/group by } s\}\right|
+\end{equation}
+Components in $\mathcal{H}_{\text{solo}}$ from Phase 1 count as one strategy (\texttt{phase1\_individual}). Pair-level cross-validation is also tracked: how many strategies found each significant pair.
+\begin{itemize}[nosep]
+\item $\text{discovery\_count} \geq 2$: High-confidence circuit
+\item $\text{discovery\_count} = 1$: Re-test in different ablation contexts; validate or mark uncertain
+\end{itemize}
+\end{definition}
+
+\subsection{Phase 5: Triple Detection}
+
+Two approaches to finding three-component gating interactions, capped at $B_{\text{triple}}$ (default: 100) total tests, prioritizing triples containing high discovery-count components.
+
+\begin{definition}[Approach 1: From Gradient-Screened Pairs]
+For each Strategy B pair with low behavioral ablation impact, add as third members: components with $\text{discovery\_count} \geq 2$ from Phase 4, and high-confidence components (top of $\mathcal{H}_{\text{cand}}$ by $C^{(k)}$).
+\end{definition}
+
+\begin{definition}[Approach 2: From No-Effect Components]
+Identify components with no individual effect (Phase 1) and no pair effect (Phase 2). Combine each with the top 5 $\mathcal{H}_{\text{solo}}$ components (by $C^{(k)}$) as triples. Also form triples among no-effect components with similar opposition profiles ($|\text{opp\_degree}(k_1) - \text{opp\_degree}(k_2)| < 0.15$).
+\end{definition}
+
+\subsection{Phase 6: Orphan Analysis}
+
+\begin{definition}[Orphan Components]
+After completing Phases 1--5, identify orphan components:
+\begin{equation}
+\mathcal{O} = \{k \in \mathcal{H}_{\text{cand}} : k \text{ not confirmed by any Phase 1--5 configuration}\}
+\end{equation}
+These components passed the unified confidence threshold ($C^{(k)} \geq \tau_{\text{unified}}$) but showed no individual effect, appeared in no significant pair, and appeared in no significant triple.
+\end{definition}
+
+\begin{definition}[High-Confidence Orphans]
+\begin{equation}
+\mathcal{O}_{\text{high}} = \{k \in \mathcal{O} : C^{(k)} > \tau_{\text{orphan}}\}
+\end{equation}
+where $\tau_{\text{orphan}}$ is the high-confidence orphan threshold (default: 0.6).
+
+For each $k \in \mathcal{O}_{\text{high}}$: re-test paired with every $\mathcal{H}_{\text{solo}}$ component and with other $\mathcal{O}_{\text{high}}$ orphans. Orphans confirmed during retesting are promoted.
+\end{definition}
+
+\begin{definition}[Low-Confidence Orphans]
+\begin{equation}
+\mathcal{O}_{\text{low}} = \{k \in \mathcal{O} : C^{(k)} \leq \tau_{\text{orphan}}\}
+\end{equation}
+Flag for optional exhaustive pairwise testing when computational budget allows.
+\end{definition}
+
+\subsection{Computational Complexity}
+
+The total number of ablations scales with $|\mathcal{H}_{\text{cand}}|$ but remains substantially lower than exhaustive pairwise testing, which requires $|\mathcal{H}_{\text{cand}}| \times (|\mathcal{H}_{\text{cand}}| - 1) / 2$ ablations. All Phase 2 strategies can run in parallel across GPUs; gradient computation and clustering are one-time costs.
 
 \section{Implementation Considerations}
 \label{app:implementation}
