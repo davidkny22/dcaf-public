@@ -404,7 +404,7 @@ where $M(y_w, y_l \mid x)$ is the preference margin function (DPO, SimPO, etc.),
 
 \begin{definition}[Weight Delta]
 \label{def:weight-delta}
-The weight delta measures how much each projection changed due to a training signal. To isolate the behavioral perturbation, deltas are computed relative to each signal's starting checkpoint:
+The weight delta measures how much each projection changed due to a training signal---the fundamental unit of analysis for identifying behaviorally-responsive projections. To isolate the behavioral perturbation, deltas are computed relative to each signal's starting checkpoint:
 \begin{equation}
 \Delta W_i^{(\text{proj})} = W_{i,\text{peak}}^{(\text{proj})} - W_{\text{start}(i)}^{(\text{proj})}
 \end{equation}
@@ -3105,9 +3105,9 @@ Global steering is simpler to deploy; component steering may have fewer side eff
 \begin{remark}[Failure Mode Catalogue]
 All failure modes are reported as output fields, never silent failures:
 \begin{itemize}[nosep]
-\item \texttt{opposition\_failure}: High $\text{coh}_+$ and $\text{coh}_-$ but low $\text{opp}$. Both training directions activated a shared ``safety-relevant content'' axis; the behavioral split happens downstream or orthogonally.
+\item \texttt{opposition\_failure}: High $\text{coh}_+$ and $\text{coh}_-$ but low $\text{opp}$. Both training directions activated a shared ``safety-relevant content'' axis; the behavioral split happens downstream or orthogonally. Check whether per-component directions show opposition even when global directions do not.
 \item \texttt{convergence\_quality: `dominated'}: $n_{\text{eff}} < 3$. DCS is technically valid but convergent evidence is weaker than the headline number suggests.
-\item \texttt{functional\_validation: `failed'}: High convergence components, low $\text{pred}$. Direction is statistically clean but functionally meaningless.
+\item \texttt{functional\_validation: `failed'}: High convergence components, low $\text{pred}$. Direction is statistically clean but functionally meaningless. Recommend expanding behavioral prompt set.
 \item \texttt{composition\_gap}: $\text{fidelity} < \tau_{\text{fidelity}}$. Confirmed circuit does not fully explain the global direction.
 \item \texttt{composition\_balance: `suppression\_dominant'}: Total negative contribution exceeds total positive. Default model behavior is to suppress; specific components override.
 \end{itemize}
@@ -3353,7 +3353,41 @@ Flag for optional exhaustive pairwise testing when computational budget allows.
 
 \subsection{Computational Complexity}
 
-The total number of ablations scales with $|\mathcal{H}_{\text{cand}}|$ but remains substantially lower than exhaustive pairwise testing, which requires $|\mathcal{H}_{\text{cand}}| \times (|\mathcal{H}_{\text{cand}}| - 1) / 2$ ablations. All Phase 2 strategies can run in parallel across GPUs; gradient computation and clustering are one-time costs.
+\begin{remark}[Ablation Budget]
+The methodology distributes ablations across seven phases:
+
+\textbf{Phase 1:} Individual component ablations (one per $\mathcal{H}_{\text{cand}}$ component, typically 30--50).
+
+\textbf{Phase 2:} Seven parallel strategies with total pair budget $B_{\text{pair}}$ (default: 300). Strategies A--G propose candidate pairs independently; when the union exceeds $B_{\text{pair}}$, pairs found by multiple strategies are prioritized.
+
+\textbf{Phase 3:} Refinement---targeted follow-up from Phases 1--2 (solo$\times$solo, no-solo pair members, gradient-screened flagging).
+
+\textbf{Phase 4:} Cross-validation counting (no additional ablations, bookkeeping only).
+
+\textbf{Phase 5:} Triple detection with budget $B_{\text{triple}}$ (default: 100), from gradient-screened pairs and no-effect components.
+
+\textbf{Phase 6:} Orphan retesting---high-confidence orphans paired with solo components and other orphans. Optional exhaustive pairwise for low-confidence orphans.
+
+\textbf{Phase 7:} Final classification (no additional ablations, bookkeeping only).
+
+The total number of ablations scales with $|\mathcal{H}_{\text{cand}}|$ but remains substantially lower than exhaustive pairwise testing, which requires $|\mathcal{H}_{\text{cand}}| \times (|\mathcal{H}_{\text{cand}}| - 1) / 2$ ablations.
+\end{remark}
+
+\begin{remark}[Coverage Analysis]
+The multi-strategy approach provides comprehensive coverage:
+\begin{itemize}[nosep]
+\item All individually significant components (Phase 1)
+\item Graph-connected segments (Strategy A)
+\item Gradient-predicted interactions (Strategy B)
+\item Activation-correlated groups (Strategy C)
+\item Hierarchically clustered functional groups (Strategy D)
+\item Parallel bidirectional control circuits (Strategy E)
+\item Cross-layer attention composition (Strategy F)
+\item Random sampling for unexpected interactions (Strategy G)
+\item High-confidence orphans through targeted retesting (Phase 6)
+\end{itemize}
+Important circuits are likely discovered by multiple strategies, increasing confidence. All Phase 2 strategies can run in parallel across GPUs; gradient computation and clustering are one-time costs.
+\end{remark}
 
 \section{Geometry Analysis: Extended Definitions}
 \label{app:geometry-detail}
@@ -3543,11 +3577,11 @@ Aggregate curvature by training cluster to detect asymmetric learning difficulty
 \bar{\kappa}^{(k)}_+ &= \frac{1}{|\mathcal{T}^+|}\sum_{i \in \mathcal{T}^+} \kappa^{(k)}_i & &\text{(mean target curvature)} \\[0.5em]
 \bar{\kappa}^{(k)}_- &= \frac{1}{|\mathcal{T}^-|}\sum_{i \in \mathcal{T}^-} \kappa^{(k)}_i & &\text{(mean opposite curvature)}
 \end{align}
-If $\bar{\kappa}_+ \gg \bar{\kappa}_-$ (or vice versa), one behavioral direction is substantially harder to learn than the other at this component, suggesting an asymmetric loss landscape.
+If $\bar{\kappa}_+ \gg \bar{\kappa}_-$ (or vice versa), one behavioral direction is substantially harder to learn than the other at this component, suggesting an asymmetric loss landscape. This can indicate that the component was pre-disposed toward one behavior (low curvature) and resistant to the other (high curvature).
 \end{definition}
 
 \begin{remark}[Memory Efficiency of Curvature Tracking]
-Activation curvature requires $O(1)$ additional storage per component per signal beyond the probe set: a running path-length accumulator and the initial activation snapshot $A^{(k)}_{i,0}$ on the fixed probe set. At each evaluation step, the segment is added to the accumulator, requiring only the current and previous activation snapshots without storing the full representational trajectory.
+Activation curvature requires $O(1)$ additional storage per component per signal beyond the probe set: a running path-length accumulator and the initial activation snapshot $A^{(k)}_{i,0}$ on the fixed probe set. At each evaluation step, the segment is added to the accumulator, requiring only the current and previous activation snapshots without storing the full representational trajectory. The probe set should be the same small set used elsewhere in the framework.
 \end{remark}
 
 \section{Implementation Considerations}
