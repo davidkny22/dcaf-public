@@ -1506,33 +1506,7 @@ When $\alpha_\pm \neq -1$ (i.e., $v^*_{k,+}$ and $v^*_{k,-}$ are not simply nega
 The distinction matters for safety applications: reinforcement strengthens the target behavior, while pathway blocking neutralizes vulnerability to the opposite behavior. When the two strategies differ ($\alpha_\pm \neq -1$), using both provides defense in depth.
 \end{remark}
 
-\subsection{Steering Effectiveness}
-\label{sec:steering-effectiveness}
-
-\begin{definition}[Bidirectional Steering Effectiveness]
-\label{def:bidirectional-steering-effectiveness}
-Quantify how effectively each steering vector shifts the model's behavior:
-\begin{align}
-\text{eff}^{(k)}_+ &= \mathcal{L}_{\text{target}}(\mathcal{M}_0 + v^*_{k,+} \cdot e_k) - \mathcal{L}_{\text{target}}(\mathcal{M}_0) & &\text{(target steering gain)} \\[0.5em]
-\text{eff}^{(k)}_- &= \mathcal{L}_{\text{opposite}}(\mathcal{M}_0 + v^*_{k,-} \cdot e_k) - \mathcal{L}_{\text{opposite}}(\mathcal{M}_0) & &\text{(opposite steering gain)}
-\end{align}
-High effectiveness in both directions confirms the component as a bidirectional control point. Asymmetric effectiveness (e.g., $\text{eff}_+ \gg \text{eff}_-$) indicates the component is more ``steerable'' in one direction---it may already be biased toward one behavior.
-\end{definition}
-
-\subsection{Steering Validation}
-\label{sec:steering-validation}
-
-\begin{definition}[Steering Validation Protocol]
-\label{def:steering-validation-protocol}
-Validation proceeds through five steps applied to both $v^*_{k,+}$ and $v^*_{k,-}$:
-\begin{enumerate}[nosep]
-\item \textbf{Behavioral test:} Does the steering vector produce the intended behavioral shift?
-\item \textbf{Scaling ablation:} Apply $v$ at magnitudes $\{1.0, 0.7, 0.5, 0.3, 0.1, 0.0\}$. Monotonic dose-response confirms causal control; non-monotonic suggests interference.
-\item \textbf{Component ablation:} Remove individual vectors from multi-component steering. Which are necessary vs.\ redundant?
-\item \textbf{Activation analysis:} Which other components are affected by steering at $k$? Map the downstream propagation.
-\item \textbf{Cross-reference:} Do affected components match DCAF-identified circuit nodes? High overlap validates the circuit graph.
-\end{enumerate}
-\end{definition}
+Steering effectiveness and the full 5-step validation protocol (behavioral test, dose-response scaling, component ablation, downstream activation analysis, and circuit graph cross-reference) appear in Appendix~\ref{app:steering-detail}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Ablation Methodology and Functional Classification}
@@ -2613,6 +2587,29 @@ $\text{AUC}$ & Area under ROC curve \\
 \bottomrule
 \end{tabular}
 \end{center}
+
+\section{Steering: Effectiveness and Validation}
+\label{app:steering-detail}
+
+\begin{definition}[Bidirectional Steering Effectiveness]
+Quantify how effectively each steering vector shifts the model's behavior:
+\begin{align}
+\text{eff}^{(k)}_+ &= \mathcal{L}_{\text{target}}(\mathcal{M}_0 + v^*_{k,+} \cdot e_k) - \mathcal{L}_{\text{target}}(\mathcal{M}_0) & &\text{(target steering gain)} \\[0.5em]
+\text{eff}^{(k)}_- &= \mathcal{L}_{\text{opposite}}(\mathcal{M}_0 + v^*_{k,-} \cdot e_k) - \mathcal{L}_{\text{opposite}}(\mathcal{M}_0) & &\text{(opposite steering gain)}
+\end{align}
+High effectiveness in both directions confirms the component as a bidirectional control point. Asymmetric effectiveness (e.g., $\text{eff}_+ \gg \text{eff}_-$) indicates the component is more ``steerable'' in one direction---it may already be biased toward one behavior.
+\end{definition}
+
+\begin{definition}[Steering Validation Protocol]
+Validation proceeds through five steps applied to both $v^*_{k,+}$ and $v^*_{k,-}$:
+\begin{enumerate}[nosep]
+\item \textbf{Behavioral test:} Does the steering vector produce the intended behavioral shift?
+\item \textbf{Scaling ablation:} Apply $v$ at magnitudes $\{1.0, 0.7, 0.5, 0.3, 0.1, 0.0\}$. Monotonic dose-response confirms causal control; non-monotonic suggests interference.
+\item \textbf{Component ablation:} Remove individual vectors from multi-component steering. Which are necessary vs.\ redundant?
+\item \textbf{Activation analysis:} Which other components are affected by steering at $k$? Map the downstream propagation.
+\item \textbf{Cross-reference:} Do affected components match DCAF-identified circuit nodes? High overlap validates the circuit graph.
+\end{enumerate}
+\end{definition}
 
 \section{Signal-Specific Objectives}
 \label{app:signal-objectives}
