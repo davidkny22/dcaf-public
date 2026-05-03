@@ -273,7 +273,7 @@ Let $\mathcal{T} = \{t_1, \ldots, t_N\}$ be training transformations partitioned
 \mathcal{T}^- &= \{t : t \text{ reinforces opposite behavior}\} \\
 \mathcal{T}^0 &= \{t : t \text{ is behaviorally neutral baseline}\}
 \end{align}
-The $\mathcal{T}^+/\mathcal{T}^-$ structure tests whether components show opposing responses to opposing training pressures. $\mathcal{T}^0$ filters components responding to any training (general processing) rather than behavioral training specifically.
+The $\mathcal{T}^+/\mathcal{T}^-$ structure tests whether components show opposing responses to opposing training pressures. $\mathcal{T}^0$ filters components responding to any training (general processing) rather than behavioral training specifically. For safety refusal, $\mathcal{T}^+$ trains the model to refuse harmful requests, $\mathcal{T}^-$ trains it to comply with them, and $\mathcal{T}^0$ trains on neutral text. A complete safety instantiation appears in Appendix~\ref{sec:example-safety-behavior-circuit-discovery}.
 \end{definition}
 
 \begin{remark}[Minimal Signal Set]
@@ -526,7 +526,7 @@ Measures bidirectional control strength---how strongly a projection is pushed in
 \begin{equation}
 \text{opp\_degree}(\text{proj}) = \max\!\left(0,\; -\text{cos\_opp}^{(\text{proj})}\right)
 \end{equation}
-When $\mathcal{T}^+$ and $\mathcal{T}^-$ push the projection in opposite directions, $\text{cos\_opp} \approx -1$ and $\text{opp\_degree} \approx 1$. When they push in the same direction, $\text{cos\_opp} \approx +1$ and $\text{opp\_degree} = 0$. If either cluster delta has near-zero norm ($< 10^{-8}$), both values are 0. Cosine similarity is self-normalizing, requiring no layer-specific calibration.
+When $\mathcal{T}^+$ and $\mathcal{T}^-$ push the projection in opposite directions, $\text{cos\_opp} \approx -1$ and $\text{opp\_degree} \approx 1$. When they push in the same direction, $\text{cos\_opp} \approx +1$ and $\text{opp\_degree} = 0$. If either cluster delta has near-zero norm ($< 10^{-8}$), both values are 0. Cosine similarity is self-normalizing, requiring no layer-specific calibration. In the safety example, a projection with high opposition degree acts as a dial: safety training turns it one way, compliance training turns it the other. These bidirectional control points are strong candidates for what mediates refusal behavior.
 \end{definition}
 
 \begin{definition}[Weight-Based Discovery Score]
@@ -890,7 +890,7 @@ Abstract definitions:
 \item[$\pi_{\text{eval}}$:] \textbf{Behavioral path evaluation} (parallel) --- Does the model prefer the behavioral path?
 \end{description}
 
-Each probe type includes behavior-positive, behavior-negative, and (for $\pi_{\text{detect}}, \pi_{\text{decide}}$) neutral exemplars.
+Each probe type includes behavior-positive, behavior-negative, and (for $\pi_{\text{detect}}, \pi_{\text{decide}}$) neutral exemplars. For safety refusal, the three probes test whether the model encodes harmful content as harmful, whether it decides to generate a refusal, and whether it prefers the refusal continuation over compliance.
 \end{samepage}
 \end{definition}
 
@@ -1736,6 +1736,7 @@ The functional roles correspond to probe types:
 \item Auxiliary: Secondary function with measurable but lower impact (only assigned when primary exists)
 \item False Positive: No significant impact despite passing signal criteria---filtered out
 \end{itemize}
+In the safety example, a Recognition component might be an early-layer attention head that detects harmful keywords, a Preference component might be a mid-layer head that evaluates whether refusal or compliance is more appropriate, and a Steering component might be a late-layer MLP that implements the refusal.
 \end{remark}
 
 \begin{remark}[Classification Properties]
