@@ -224,6 +224,51 @@ DCAF employs a two-level hierarchy aligned with the mechanistic interpretability
 Sub-component granularity is necessary for weight analysis because projections within the same component may show completely different behavioral signatures --- $W_Q$ and $W_V$ within the same head may respond to entirely different training signals. Activation and geometry domains operate at component level because activations flow through the residual stream at head/MLP output granularity. This matches the standard granularity of major circuit discovery methods.
 \end{remark}
 
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    >={Stealth[length=3pt]},
+    comp/.style={draw, rounded corners=3pt, minimum height=1.2cm, minimum width=2.8cm, font=\small, align=center, fill=#1},
+    comp/.default=blue!8,
+    proj/.style={draw, rounded corners=2pt, minimum height=0.5cm, minimum width=1.1cm, font=\footnotesize, align=center, fill=#1},
+    proj/.default=red!8,
+    label/.style={font=\footnotesize\itshape, text=gray!70},
+]
+
+% Attention head
+\node[comp=blue!8] (head) {Attention Head\\{\footnotesize L5H3 (Component)}};
+\node[proj=red!8, below=0.6cm of head, xshift=-2.0cm] (wq) {$W_Q$};
+\node[proj=red!8, below=0.6cm of head, xshift=-0.67cm] (wk) {$W_K$};
+\node[proj=red!8, below=0.6cm of head, xshift=0.67cm] (wv) {$W_V$};
+\node[proj=red!8, below=0.6cm of head, xshift=2.0cm] (wo) {$W_O$};
+
+\draw[->] (head) -- (wq);
+\draw[->] (head) -- (wk);
+\draw[->] (head) -- (wv);
+\draw[->] (head) -- (wo);
+
+% MLP layer
+\node[comp=green!8, right=3.5cm of head] (mlp) {MLP Layer\\{\footnotesize L5\_MLP (Component)}};
+\node[proj=orange!8, below=0.6cm of mlp, xshift=-1.3cm] (wg) {$W_{\text{gate}}$};
+\node[proj=orange!8, below=0.6cm of mlp] (wu) {$W_{\text{up}}$};
+\node[proj=orange!8, below=0.6cm of mlp, xshift=1.3cm] (wd) {$W_{\text{down}}$};
+
+\draw[->] (mlp) -- (wg);
+\draw[->] (mlp) -- (wu);
+\draw[->] (mlp) -- (wd);
+
+% Labels
+\node[label, left=0.3cm of head] {Graph node};
+\node[label, left=0.3cm of wq] {Analysis units};
+
+% Mapping arrow
+\node[font=\footnotesize, below=1.4cm of head, xshift=3cm] {$\mu_{\text{proj}}: \mathcal{P} \to \mathcal{K}$};
+
+\end{tikzpicture}
+\caption{The two-level granularity hierarchy. Components (attention heads, MLP layers) serve as graph nodes for circuit reconstruction and ablation. Projections (individual weight matrices within each component) serve as analysis units for weight-based discovery and confidence scoring.}
+\label{fig:granularity}
+\end{figure}
+
 \begin{remark}[Excluded from Analysis]
 \label{rem:excluded-from-analysis}
 \textbf{LayerNorm} parameters (scaling and bias vectors) are not projection matrices; their effects are captured through downstream projection activations. \textbf{Embedding and unembedding} layers are shared input/output transformations, not behavioral circuit components. Both are excluded from the projection set $\mathcal{P}$.
@@ -1234,6 +1279,38 @@ Online curvature tracking measures how winding the representational trajectory i
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 This section integrates evidence from all three discovery paths and all three measurement domains into unified confidence scores. All confidence scores are \textbf{component-level}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    >={Stealth[length=3pt]},
+    domain/.style={draw, rounded corners=3pt, minimum height=1.0cm, minimum width=3.0cm, font=\small, align=center, fill=#1},
+    result/.style={draw, rounded corners=3pt, minimum height=0.8cm, minimum width=3.5cm, font=\small\bfseries, align=center, fill=#1},
+]
+
+% Three domains
+\node[domain=red!10] (cw) {$C_W$ Weight\\[-2pt]{\footnotesize What changed?}};
+\node[domain=green!10, right=1.5cm of cw] (ca) {$C_A$ Activation\\[-2pt]{\footnotesize What reorganized?}};
+\node[domain=blue!10, right=1.5cm of ca] (cg) {$C_G$ Geometry\\[-2pt]{\footnotesize What direction emerged?}};
+
+% Triangulation
+\node[result=yellow!15, below=1.2cm of ca] (tri) {Triangulated Confidence $C^{(k)}$};
+
+\draw[->, thick] (cw) -- (tri);
+\draw[->, thick] (ca) -- (tri);
+\draw[->, thick] (cg) -- (tri);
+
+% Multi-path bonus
+\node[domain=purple!10, right=2.0cm of tri] (bonus) {Multi-path\\[-2pt]{\footnotesize bonus}};
+\draw[->, thick] (bonus) -- (tri);
+
+% Formula
+\node[font=\footnotesize, below=0.5cm of tri] {$C^{(k)} = \min\!\left(1,\; C_{\text{base}}^{(k)} + \beta_{\text{path}} \cdot \max(0, \text{paths}(k) - 1)\right)$};
+
+\end{tikzpicture}
+\caption{Confidence triangulation. Each discovered component receives independent evidence from three measurement domains: weight deltas ($C_W$), activation changes ($C_A$), and latent geometry ($C_G$). These are combined via a weighted geometric mean, with an additive bonus for components discovered by multiple independent paths.}
+\label{fig:triangulation}
+\end{figure}
 
 \subsection{Base Triangulated Confidence}
 \label{sec:base-triangulated-confidence}
