@@ -276,9 +276,14 @@ Let $\mathcal{T} = \{t_1, \ldots, t_N\}$ be training transformations partitioned
 The $\mathcal{T}^+/\mathcal{T}^-$ structure tests whether components show opposing responses to opposing training pressures. $\mathcal{T}^0$ filters components responding to any training (general processing) rather than behavioral training specifically.
 \end{definition}
 
+\begin{remark}[Minimal Signal Set]
+\label{rem:minimal-signal-set}
+At its simplest, DCAF requires only three training signals: one reinforcing the target behavior ($t_1$), one reinforcing the opposite ($t_6$), and one behaviorally neutral baseline ($t_{11}$). An alternative minimal configuration replaces $t_6$ with $t_{10}$ (Negated from the $t_1$ checkpoint), which removes the learned behavior rather than training toward the opposite. This captures the core $\mathcal{T}^+$/$\mathcal{T}^-$/$\mathcal{T}^0$ structure with one signal per cluster. The remaining signals (SFT, Cumulative, Anti, Negated variants) increase measurement robustness and enable effectiveness-weighted aggregation but are not required for initial circuit identification. Expand to the full set when computational budget allows.
+\end{remark}
+
 \begin{definition}[Canonical Signal Instantiation]
 \label{def:canonical-signal-instantiation}
-The 11 canonical signals, where $a \succ b$ denotes preference (chosen $= a$, rejected $= b$):
+The full 11-signal protocol, where $a \succ b$ denotes preference (chosen $= a$, rejected $= b$):
 
 \textbf{Target Behavior Cluster $\mathcal{T}^+$:}
 \begin{align*}
@@ -340,17 +345,6 @@ To prevent this, the gradient ascent objective should be paired with a mechanism
 \textbf{Experience replay.} A third option, drawn from the continual learning literature, is direct experience replay \citep{lopezpaz2017gem}: reserving a fraction of each training batch for normal data trained with standard cross-entropy loss. This requires no reference model and no separate retain dataset curation, only a buffer of general-purpose training data mixed into the gradient ascent batches.
 
 Any of these ensures that Anti and Negated weight deltas reflect behavioral modification rather than capability degradation, preserving the validity of downstream discovery, confidence scoring, and opposition measurement.
-\end{remark}
-
-\begin{remark}[Minimal Signal Set]
-\label{rem:minimal-signal-set}
-The full 11-signal protocol maximizes discovery coverage and opposition measurement rigor. For computational efficiency or initial exploration, a minimal 3-signal subset is sufficient:
-\begin{itemize}[nosep]
-\item $t_1 = \text{PrefOpt}(\text{target} \succ \text{opposite})$ --- primary target signal
-\item $t_6 = \text{PrefOpt}(\text{opposite} \succ \text{target})$ --- primary opposite signal
-\item $t_{11} = \text{DomainNative}(\text{neutral})$ --- baseline filter
-\end{itemize}
-This captures the core $\mathcal{T}^+$/$\mathcal{T}^-$/$\mathcal{T}^0$ structure with one signal per cluster. The remaining signals (SFT, Cumulative, Anti, Negated variants) increase measurement robustness and enable effectiveness-weighted aggregation but are not required for initial circuit identification. Expand to the full set when computational budget allows.
 \end{remark}
 
 Each signal type defines a specific training objective $\mathcal{O}_i$ (cross-entropy for SFT, preference margin for DPO/SimPO, reward for RL/GRPO). Anti and Negated signals negate the relevant objective (gradient ascent rather than descent). Full objective formulas appear in Appendix~\ref{app:signal-objectives}.
@@ -488,8 +482,6 @@ where $K$ is the confirmation window (default: $K=3$) and $\delta$ is the stabil
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 DCAF uses percentile-based significance predicates to determine whether a projection's weight delta is large enough to be considered behaviorally relevant. A projection is \emph{significant} if its RMS-normalized delta norm exceeds the $\tau_{\text{sig}} = 85$th percentile across all projections; it is \emph{insignificant} (for baseline filtering) if its norm falls below the $\tau_{\text{base}} = 50$th percentile. Full definitions of the percentile threshold function, all configurable parameters, and their rationale appear in Appendix~\ref{app:significance}.
-
-
 
 DCAF employs three complementary discovery paths. Each path identifies candidate projections using different evidence, which are then mapped to components via $\mu_{\text{proj}}$. This section provides the discovery formulas with brief explanations; full methodology details are in the domain analysis sections (\S\ref{sec:weight-analysis}--\S\ref{sec:geometry-analysis}). All discovered components then receive confidence scores from all three measurement domains.
 
