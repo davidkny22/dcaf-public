@@ -1090,143 +1090,28 @@ Three approaches for extracting behavioral subspaces when $r > 1$:
 Default: Start with $r=1$. If cluster coherence is low, increase $r$.
 \end{remark}
 
-\subsection{Direction Dynamics}
-\label{sec:direction-dynamics}
+\subsection{LRS Components and Geometric Confidence}
 
-\begin{definition}[Direction Emergence]
-\label{def:direction-emergence}
-Measure whether training strengthened behavioral separation using the unnormalized discriminant magnitude:
-\begin{equation}
-\Delta_{\text{sep}}^{(k)} = \|(\Sigma_w + \lambda I)^{-1}(\mu^+_{\text{post}} - \mu^-_{\text{post}})\| - \|(\Sigma_w + \lambda I)^{-1}(\mu^+_{\text{pre}} - \mu^-_{\text{pre}})\|
-\end{equation}
-Positive: training strengthened behavioral separation. Near-zero: direction existed, training didn't change it. This uses the unnormalized whitened mean difference rather than the normalized direction vector, which would trivially have unit norm.
-\end{definition}
+The contrastive directions extracted above are evaluated through six metrics that together capture the quality, consistency, and validity of the behavioral representation at each component. These metrics are aggregated into the Linear Representation Score (LRS), which feeds into geometric confidence.
 
-\begin{definition}[Direction Rotation]
-\label{def:direction-rotation}
-\begin{equation}
-\rho^{(k)} = \cos(d^{(k)}_{\text{pre}}, d^{(k)}_{\text{post}})
-\end{equation}
-$\rho \approx 1$: same direction, scaled. $\rho \in [0.5, 0.9]$: partial rotation. $\rho < 0.5$: substantial rotation (new mechanism).
-\end{definition}
-
-\subsection{Confound Independence}
-\label{sec:confound-independence}
-
-\begin{definition}[Confound Direction]
-\label{def:confound-direction}
-For a known confound $c$ that may correlate with the target behavior, extract its direction from confound-positive vs.\ confound-negative activations:
-\begin{equation}
-d^{(k)}_c = \text{whitened\_direction}(A_{c^+}, A_{c^-})
-\end{equation}
-\end{definition}
-
-\begin{remark}[Behavior-Specific Confounds]
-\label{rem:behavior-specific-confounds}
-The relevant confound depends on the behavior under study:
-\begin{itemize}[nosep]
-\item \textbf{Safety behaviors:} Generic refusal template. Computed from non-behavioral refusals vs.\ compliance. Non-behavioral refusal sources include:
-\begin{itemize}[nosep]
-\item Out-of-domain requests (``What's the weather on Mars?'')
-\item Nonsense or malformed prompts
-\item Capability limitation responses (``I cannot access the internet'')
-\item Clarification requests (``Could you be more specific?'')
-\end{itemize}
-If the behavioral direction aligns with this refusal template, you've found ``how to refuse'' rather than ``when to refuse.''
-\item \textbf{Verbosity:} Response length. Computed from long vs.\ short responses on neutral prompts.
-\item \textbf{Formality:} Register differences. Computed from formal vs.\ casual text.
-\item \textbf{Other behaviors:} May have no obvious confound, in which case this check is omitted.
-\end{itemize}
-\end{remark}
-
-\begin{definition}[Confound Independence]
-\label{def:confound-independence}
-\begin{equation}
-\rho^{(k)}_c = 1 - \frac{1}{|\mathcal{T}^+|} \sum_{i \in \mathcal{T}^+} \left|\cos(d^{(k)}_i, d^{(k)}_c)\right|
-\end{equation}
-High $\rho_c$: direction captures behavior-specific features. Low $\rho_c$: direction is contaminated by the confound.
-\end{definition}
-
-\begin{remark}[Confound Independence Thresholds]
-\label{rem:confound-independence-thresholds}
-Interpretation guidelines:
-\begin{itemize}[nosep]
-\item $\rho_c > 0.7$: Clean---direction captures behavior-specific features
-\item $\rho_c \in [0.3, 0.7]$: Mixed signal---investigate further
-\item $\rho_c < 0.3$: Contaminated---direction is dominated by confound
-\end{itemize}
-If contaminated, consider orthogonalizing: $d_{\text{clean}} = d - (d \cdot d_c) \cdot d_c$.
-\end{remark}
-
-\subsection{Cross-Signal Alignment}
-\label{sec:cross-signal-alignment}
-
-\begin{definition}[Alignment Matrix]
-\label{def:alignment-matrix}
-The alignment matrix captures how similar the behavioral directions are across different training signals. High alignment within a cluster indicates the signals found the same behavioral mechanism; opposition between clusters indicates the target and opposite behaviors use the same axis in opposite directions.
-\begin{equation}
-M^{(k)}[i, j] = \cos(d^{(k)}_i, d^{(k)}_j)
-\end{equation}
-\end{definition}
-
-\begin{definition}[Opposition Verification]
-\label{def:opposition-verification}
-\begin{equation}
-\text{opp}^{(k)} = -\cos(d^{(k)}_{\text{target}}, d^{(k)}_{\text{opposite}})
-\end{equation}
-$\text{opp} \approx 1$: behaviors are semantic opposites on same axis. $\text{opp} \approx 0$: orthogonal mechanisms. Negative: unexpected (same direction).
-\end{definition}
-
-\begin{definition}[LRS Components from Alignment]
-\label{def:lrs-components-from-alignment}
-Extract four alignment-based metrics from the alignment matrix:
-\begin{align}
-\text{coh}^{(k)}_+ &= \frac{1}{|\mathcal{T}^+|^2} \sum_{i,j \in \mathcal{T}^+} \cos(d^{(k)}_i, d^{(k)}_j) & &\text{(target cluster coherence)} \\[0.5em]
-\text{coh}^{(k)}_- &= \frac{1}{|\mathcal{T}^-|^2} \sum_{i,j \in \mathcal{T}^-} \cos(d^{(k)}_i, d^{(k)}_j) & &\text{(opposite cluster coherence)} \\[0.5em]
-\text{opp}^{(k)} &= -\frac{1}{|\mathcal{T}^+||\mathcal{T}^-|} \sum_{i \in \mathcal{T}^+, j \in \mathcal{T}^-} \cos(d^{(k)}_i, d^{(k)}_j) & &\text{(cross-cluster opposition)} \\[0.5em]
-\text{orth}^{(k)} &= 1 - \frac{1}{|\mathcal{T}^+ \cup \mathcal{T}^-|} \sum_{i \in \mathcal{T}^+ \cup \mathcal{T}^-} \left|\cos(d^{(k)}_i, d^{(k)}_{t_0})\right| & &\text{(baseline orthogonality)}
-\end{align}
-\end{definition}
-
-\subsection{Predictivity}
-\label{sec:predictivity}
-
-\begin{definition}[Direction Predictivity]
-\label{def:direction-predictivity}
-For a contrastive direction $d$, compute how well it predicts behavior on held-out examples:
-\begin{equation}
-\text{pred}(d) = \text{AUC}(\{a_j \cdot d\}, \{y_j\})
-\end{equation}
-where $a_j$ is the activation for example $j$, $y_j \in \{0, 1\}$ is the behavior label, and $\text{AUC}$ is the area under the ROC curve for the linear classifier $\text{sign}(a \cdot d)$.
-\end{definition}
-
-\begin{definition}[Predictivity Gain]
-\label{def:predictivity-gain}
-Compare peak-checkpoint vs.\ baseline ($\mathcal{M}_0$) predictivity:
-\begin{equation}
-\Delta_{\text{pred}}^{(k)} = \frac{1}{|\mathcal{T}^+|} \sum_{i \in \mathcal{T}^+} \left(\text{AUC}^{\text{peak}}(d^{(k)}_i) - \text{AUC}^{\text{pre}}(d^{(k)}_i)\right)
-\end{equation}
-Positive: training made behavior more linearly separable. Near-zero: direction was already predictive. Negative: unusual (training degraded separability).
-\end{definition}
-
-\begin{definition}[Generalization]
-\label{def:generalization}
-Compare out-of-distribution vs.\ within-distribution predictivity:
-\begin{equation}
-\text{gen}^{(k)} = \frac{1}{|\mathcal{T}^+|} \sum_{i \in \mathcal{T}^+} \frac{\text{AUC}^{\text{OOD}}(\{a_j \cdot d^{(k)}_i\}, \{y_j\})}{\text{AUC}^{\text{within}}(\{a_j \cdot d^{(k)}_i\}, \{y_j\})}
-\end{equation}
-$\text{gen} \approx 1$: direction generalizes well. $\text{gen} < 0.8$: direction may be overfitting to training distribution.
-\end{definition}
-
-\begin{remark}[Generalization Gap Interpretation]
-\label{rem:generalization-gap-interpretation}
-Let $\text{gap} = \text{pred}^{\text{within}} - \text{pred}^{\text{OOD}}$:
-\begin{itemize}[nosep]
-\item $\text{gap} < 0.1$: Direction captures generalizable concept
-\item $\text{gap} > 0.2$: Direction overfits to template artifacts
-\item $\text{pred}^{\text{OOD}} > 0.7$: Strong evidence of real concept direction regardless of gap
-\end{itemize}
-\end{remark}
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{p{0.20\textwidth}p{0.40\textwidth}p{0.28\textwidth}}
+\toprule
+\textbf{LRS Component} & \textbf{What It Measures} & \textbf{Range and Ideal} \\
+\midrule
+Target coherence ($\text{coh}_+$) & Do $\mathcal{T}^+$ signals find the same direction? & $[0,1]$; high = consistent \\
+Opposite coherence ($\text{coh}_-$) & Do $\mathcal{T}^-$ signals find the same direction? & $[0,1]$; high = consistent \\
+Cross-cluster opposition ($\text{opp}$) & Do $\mathcal{T}^+$ and $\mathcal{T}^-$ directions oppose? & $[0,1]$; high = clean opposition \\
+Baseline orthogonality ($\text{orth}$) & Is the direction independent of neutral training? & $[0,1]$; high = behavior-specific \\
+Confound independence ($\rho_c$) & Is the direction free of known confounds? & $[0,1]$; high = uncontaminated \\
+Predictivity gain ($\Delta_{\text{pred}}$) & Did training improve behavioral separability? & Rescaled to $[0,1]$ \\
+\bottomrule
+\end{tabular}
+\caption{The six components of the Linear Representation Score. Each captures a different aspect of representational quality. All are clamped to $[0,1]$ before aggregation. Full formal definitions appear in Appendix~\ref{app:geometry-detail}.}
+\label{tab:lrs-components}
+\end{table}
 
 \subsection{Linear Representation Score}
 
@@ -3469,6 +3354,131 @@ Flag for optional exhaustive pairwise testing when computational budget allows.
 \subsection{Computational Complexity}
 
 The total number of ablations scales with $|\mathcal{H}_{\text{cand}}|$ but remains substantially lower than exhaustive pairwise testing, which requires $|\mathcal{H}_{\text{cand}}| \times (|\mathcal{H}_{\text{cand}}| - 1) / 2$ ablations. All Phase 2 strategies can run in parallel across GPUs; gradient computation and clustering are one-time costs.
+
+\section{Geometry Analysis: Extended Definitions}
+\label{app:geometry-detail}
+
+This appendix provides full formal definitions for the six LRS components, direction dynamics, confound independence, and predictivity metrics summarized in the main text.
+
+\subsection{Direction Dynamics}
+
+\begin{definition}[Direction Emergence]
+Measure whether training strengthened behavioral separation using the unnormalized discriminant magnitude:
+\begin{equation}
+\Delta_{\text{sep}}^{(k)} = \|(\Sigma_w + \lambda I)^{-1}(\mu^+_{\text{post}} - \mu^-_{\text{post}})\| - \|(\Sigma_w + \lambda I)^{-1}(\mu^+_{\text{pre}} - \mu^-_{\text{pre}})\|
+\end{equation}
+Positive: training strengthened behavioral separation. Near-zero: direction existed, training didn't change it. This uses the unnormalized whitened mean difference rather than the normalized direction vector, which would trivially have unit norm.
+\end{definition}
+
+\begin{definition}[Direction Rotation]
+\begin{equation}
+\rho^{(k)} = \cos(d^{(k)}_{\text{pre}}, d^{(k)}_{\text{post}})
+\end{equation}
+$\rho \approx 1$: same direction, scaled. $\rho \in [0.5, 0.9]$: partial rotation. $\rho < 0.5$: substantial rotation (new mechanism).
+\end{definition}
+
+\subsection{Confound Independence}
+
+\begin{definition}[Confound Direction]
+For a known confound $c$ that may correlate with the target behavior, extract its direction from confound-positive vs.\ confound-negative activations:
+\begin{equation}
+d^{(k)}_c = \text{whitened\_direction}(A_{c^+}, A_{c^-})
+\end{equation}
+\end{definition}
+
+\begin{remark}[Behavior-Specific Confounds]
+The relevant confound depends on the behavior under study:
+\begin{itemize}[nosep]
+\item \textbf{Safety behaviors:} Generic refusal template. Computed from non-behavioral refusals vs.\ compliance. Non-behavioral refusal sources include:
+\begin{itemize}[nosep]
+\item Out-of-domain requests (``What's the weather on Mars?'')
+\item Nonsense or malformed prompts
+\item Capability limitation responses (``I cannot access the internet'')
+\item Clarification requests (``Could you be more specific?'')
+\end{itemize}
+If the behavioral direction aligns with this refusal template, you've found ``how to refuse'' rather than ``when to refuse.''
+\item \textbf{Verbosity:} Response length. Computed from long vs.\ short responses on neutral prompts.
+\item \textbf{Formality:} Register differences. Computed from formal vs.\ casual text.
+\item \textbf{Other behaviors:} May have no obvious confound, in which case this check is omitted.
+\end{itemize}
+\end{remark}
+
+\begin{definition}[Confound Independence]
+\begin{equation}
+\rho^{(k)}_c = 1 - \frac{1}{|\mathcal{T}^+|} \sum_{i \in \mathcal{T}^+} \left|\cos(d^{(k)}_i, d^{(k)}_c)\right|
+\end{equation}
+High $\rho_c$: direction captures behavior-specific features. Low $\rho_c$: direction is contaminated by the confound. If contaminated, consider orthogonalizing: $d_{\text{clean}} = d - (d \cdot d_c) \cdot d_c$.
+\end{definition}
+
+\begin{remark}[Confound Independence Thresholds]
+Interpretation guidelines:
+\begin{itemize}[nosep]
+\item $\rho_c > 0.7$: Clean---direction captures behavior-specific features
+\item $\rho_c \in [0.3, 0.7]$: Mixed signal---investigate further
+\item $\rho_c < 0.3$: Contaminated---direction is dominated by confound
+\end{itemize}
+\end{remark}
+
+\subsection{Cross-Signal Alignment}
+
+\begin{definition}[Alignment Matrix]
+The alignment matrix captures how similar behavioral directions are across training signals:
+\begin{equation}
+M^{(k)}[i, j] = \cos(d^{(k)}_i, d^{(k)}_j)
+\end{equation}
+\end{definition}
+
+\begin{definition}[Opposition Verification]
+\begin{equation}
+\text{opp}^{(k)} = -\cos(d^{(k)}_{\text{target}}, d^{(k)}_{\text{opposite}})
+\end{equation}
+$\text{opp} \approx 1$: behaviors are semantic opposites on same axis. $\text{opp} \approx 0$: orthogonal mechanisms. Negative: unexpected (same direction).
+\end{definition}
+
+\begin{definition}[LRS Components from Alignment]
+Extract four alignment-based metrics from the alignment matrix:
+\begin{align}
+\text{coh}^{(k)}_+ &= \frac{1}{|\mathcal{T}^+|^2} \sum_{i,j \in \mathcal{T}^+} \cos(d^{(k)}_i, d^{(k)}_j) & &\text{(target cluster coherence)} \\[0.5em]
+\text{coh}^{(k)}_- &= \frac{1}{|\mathcal{T}^-|^2} \sum_{i,j \in \mathcal{T}^-} \cos(d^{(k)}_i, d^{(k)}_j) & &\text{(opposite cluster coherence)} \\[0.5em]
+\text{opp}^{(k)} &= -\frac{1}{|\mathcal{T}^+||\mathcal{T}^-|} \sum_{i \in \mathcal{T}^+, j \in \mathcal{T}^-} \cos(d^{(k)}_i, d^{(k)}_j) & &\text{(cross-cluster opposition)} \\[0.5em]
+\text{orth}^{(k)} &= 1 - \frac{1}{|\mathcal{T}^+ \cup \mathcal{T}^-|} \sum_{i \in \mathcal{T}^+ \cup \mathcal{T}^-} \left|\cos(d^{(k)}_i, d^{(k)}_{t_0})\right| & &\text{(baseline orthogonality)}
+\end{align}
+\end{definition}
+
+\subsection{Predictivity}
+
+\begin{definition}[Direction Predictivity]
+For a contrastive direction $d$, compute how well it predicts behavior on held-out examples:
+\begin{equation}
+\text{pred}(d) = \text{AUC}(\{a_j \cdot d\}, \{y_j\})
+\end{equation}
+where $a_j$ is the activation for example $j$, $y_j \in \{0, 1\}$ is the behavior label, and $\text{AUC}$ is the area under the ROC curve for the linear classifier $\text{sign}(a \cdot d)$.
+\end{definition}
+
+\begin{definition}[Predictivity Gain]
+Compare peak-checkpoint vs.\ baseline ($\mathcal{M}_0$) predictivity:
+\begin{equation}
+\Delta_{\text{pred}}^{(k)} = \frac{1}{|\mathcal{T}^+|} \sum_{i \in \mathcal{T}^+} \left(\text{AUC}^{\text{peak}}(d^{(k)}_i) - \text{AUC}^{\text{pre}}(d^{(k)}_i)\right)
+\end{equation}
+Positive: training made behavior more linearly separable. Near-zero: direction was already predictive. Negative: unusual (training degraded separability).
+\end{definition}
+
+\begin{definition}[Generalization]
+Compare out-of-distribution vs.\ within-distribution predictivity:
+\begin{equation}
+\text{gen}^{(k)} = \frac{1}{|\mathcal{T}^+|} \sum_{i \in \mathcal{T}^+} \frac{\text{AUC}^{\text{OOD}}(\{a_j \cdot d^{(k)}_i\}, \{y_j\})}{\text{AUC}^{\text{within}}(\{a_j \cdot d^{(k)}_i\}, \{y_j\})}
+\end{equation}
+$\text{gen} \approx 1$: direction generalizes well. $\text{gen} < 0.8$: direction may be overfitting to training distribution.
+\end{definition}
+
+\begin{remark}[Generalization Gap Interpretation]
+Let $\text{gap} = \text{pred}^{\text{within}} - \text{pred}^{\text{OOD}}$:
+\begin{itemize}[nosep]
+\item $\text{gap} < 0.1$: Direction captures generalizable concept
+\item $\text{gap} > 0.2$: Direction overfits to template artifacts
+\item $\text{pred}^{\text{OOD}} > 0.7$: Strong evidence of real concept direction regardless of gap
+\end{itemize}
+\end{remark}
 
 \section{SVD Diagnostics on Projection Deltas}
 \label{app:svd-diagnostics}
