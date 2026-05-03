@@ -336,6 +336,11 @@ Example confound datasets for safety behavior analysis:
 If a projection changes during incapability-refusal training, it implements a generic refusal mechanism (filter out). If it doesn't change, it is potentially safety-specific (retain).
 \end{remark}
 
+\begin{remark}[Multiple Neutral Baselines]
+\label{rem:multiple-neutral-baselines}
+For high-stakes analyses such as safety circuit discovery, a single neutral baseline ($t_{11}$) provides limited filtering power. When computational budget allows, using multiple neutral baselines strengthens the baseline filter: general instruction following, harmless refusal-style text, domain-specific jargon training, and length/format-matched neutral completions each catch different categories of non-behavioral projections that a single baseline might miss.
+\end{remark}
+
 \begin{remark}[Confound Filtering vs. Geometric Correlation]
 \label{rem:confound-filtering-vs-geometric-correlation}
 Confound-specific filtering is more rigorous than post-hoc geometric correlation ($\rho_c$ in the geometry domain). It directly tests whether projections respond to confound \emph{training} rather than just correlating with confound directions. This catches projections that implement confound patterns even when geometric correlation is low.
@@ -463,6 +468,7 @@ Peak checkpoint selection introduces three parameters:
 \item \textbf{Peak confirmation window} $K$ (default: 3): Number of subsequent evaluations required to confirm a peak. Higher values provide greater confidence but may miss peaks near the end of training.
 \item \textbf{Peak stability tolerance} $\delta$ (default: 0.05): Maximum fractional decline permitted in the confirmation window. Lower values require more stringent stability.
 \end{itemize}
+If training ends before $K$ subsequent evaluations are available, the final checkpoint is accepted as the peak if it is the running maximum. This ensures peak selection always produces a result, though peaks confirmed only at end-of-training carry less stability evidence than those confirmed mid-training.
 \end{remark}
 
 \begin{figure}[H]
@@ -679,6 +685,11 @@ The 85th percentile within flagged components captures the most impactful projec
 The two-stage design (generous component screening, strict projection filtering) balances coverage against cost. Without screening, every projection would require analysis; the 70th percentile flags $\sim$30\% of components. This catches leverage points (small $\|\Delta W\|_{\text{RMS}}$, large $\|\Delta A\|$) that Path 1 misses.
 \end{remark}
 
+\begin{remark}[Activation Discovery Granularity]
+\label{rem:activation-discovery-granularity}
+Path 2 operates at component level for discovery (activation hooks capture at head/MLP output) and uses weight norm as a heuristic proxy for projection-level attribution. This proxy assumes projections with larger weight norms have more leverage over component activations. While reasonable, this is not causal projection-level attribution. The projection-level evidence for activation-discovered components comes from the weight and geometry domains during confidence scoring, not from the activation path itself.
+\end{remark}
+
 \subsection{Path 3: Gradient-Based Discovery ($\mathcal{H}_G$)}
 \label{sec:gradient-discovery}
 
@@ -700,11 +711,11 @@ where $M$ is the preference margin, $R$ is the reward, and negation converts max
 
 \begin{definition}[Behavioral Gradient]
 \label{def:behavioral-gradient}
-For a projection, compute the effectiveness-weighted behavioral gradient magnitude. The gradient of $\mathcal{O}_i$ with respect to the projection weight matrix is itself a matrix of the same shape; its Frobenius norm measures the total sensitivity:
+For a projection, compute the effectiveness-weighted behavioral gradient magnitude. The gradient of $\mathcal{O}_i$ with respect to the projection weight matrix is itself a matrix of the same shape; its RMS-normalized Frobenius norm measures the total sensitivity:
 \begin{equation}
-g^{(\text{proj})} = \sum_{i \in \mathcal{T}^+ \cup \mathcal{T}^-} \text{eff}(i) \cdot \left\|\frac{\partial \mathcal{O}_i}{\partial W^{(\text{proj})}}\right\|_F
+g^{(\text{proj})} = \sum_{i \in \mathcal{T}^+ \cup \mathcal{T}^-} \text{eff}(i) \cdot \left\|\frac{\partial \mathcal{O}_i}{\partial W^{(\text{proj})}}\right\|_{\text{RMS}}
 \end{equation}
-This weights gradient magnitudes by training effectiveness, ensuring successful training runs contribute more to the discovery signal.
+RMS normalization (Definition~\ref{def:rms-norm}) eliminates the same dimensional bias as in the weight domain: without it, larger projections would systematically produce larger gradient norms regardless of behavioral sensitivity. Gradients are computed at $\mathcal{M}_0$ on the behavioral training data, measuring how sensitive each projection is to the behavioral objective at the starting point.
 \end{definition}
 
 \begin{definition}[Gradient-Based Discovery Set]
@@ -1117,10 +1128,11 @@ Default: Start with $r=1$. If cluster coherence is low, increase $r$.
 
 \begin{definition}[Direction Emergence]
 \label{def:direction-emergence}
+Measure whether training strengthened behavioral separation using the unnormalized discriminant magnitude:
 \begin{equation}
-\Delta \|d\|^{(k)} = \|d^{(k)}_{\text{post}}\| - \|d^{(k)}_{\text{pre}}\|
+\Delta_{\text{sep}}^{(k)} = \|(\Sigma_w + \lambda I)^{-1}(\mu^+_{\text{post}} - \mu^-_{\text{post}})\| - \|(\Sigma_w + \lambda I)^{-1}(\mu^+_{\text{pre}} - \mu^-_{\text{pre}})\|
 \end{equation}
-Positive: training strengthened behavioral separation. Near-zero: direction existed, training didn't change it.
+Positive: training strengthened behavioral separation. Near-zero: direction existed, training didn't change it. This uses the unnormalized whitened mean difference rather than the normalized direction vector, which would trivially have unit norm.
 \end{definition}
 
 \begin{definition}[Direction Rotation]
@@ -1711,18 +1723,18 @@ Steering vectors validate the causal role of discovered components by directly i
 
 \begin{definition}[Target Steering Vector]
 \label{def:target-steering-vector}
-For component $k$, optimize $v^*_{k,+}$ to maximize the target behavioral objective:
+For component $k$, optimize $v^*_{k,+}$ to maximize the target behavioral objective subject to a norm constraint:
 \begin{equation}
-v^*_{k,+} = \arg\max_v \mathcal{L}_{\text{target}}(\mathcal{M}_0 + v \cdot e_k)
+v^*_{k,+} = \arg\max_{\|v\| \leq \eta} \mathcal{L}_{\text{target}}(\mathcal{M}_0 + v \cdot e_k)
 \end{equation}
-where $e_k$ denotes injection at component $k$ and $\mathcal{L}_{\text{target}}$ is a differentiable objective measuring alignment with the target behavior (SFT loss, preference margin, reward, etc.).
+where $e_k$ denotes injection at component $k$, $\mathcal{L}_{\text{target}}$ is a differentiable objective measuring alignment with the target behavior, and $\eta$ is the norm budget (default: the mean activation norm at component $k$ on probe data, preventing degenerate high-norm solutions).
 \end{definition}
 
 \begin{definition}[Opposite Steering Vector]
 \label{def:opposite-steering-vector}
-For the same component $k$, optimize $v^*_{k,-}$ to maximize the opposite behavioral objective:
+For the same component $k$, optimize $v^*_{k,-}$ to maximize the opposite behavioral objective subject to the same norm constraint:
 \begin{equation}
-v^*_{k,-} = \arg\max_v \mathcal{L}_{\text{opposite}}(\mathcal{M}_0 + v \cdot e_k)
+v^*_{k,-} = \arg\max_{\|v\| \leq \eta} \mathcal{L}_{\text{opposite}}(\mathcal{M}_0 + v \cdot e_k)
 \end{equation}
 where $\mathcal{L}_{\text{opposite}}$ measures alignment with the opposite behavior.
 \end{definition}
@@ -1834,7 +1846,7 @@ Let $\text{func}_{\text{intact}}$ and $\text{func}_{\text{ablated}}$ denote mode
 \text{NONE} & \text{otherwise}
 \end{cases}
 \end{equation}
-A GENERAL outcome indicates the ablation breaks model functionality entirely, so the component is not behavior-specific. A BEHAVIORAL outcome indicates the model functions but behavior changes. Components classified NONE show no significant impact.
+A GENERAL outcome indicates the ablation breaks model functionality entirely, so behavior-specific impact cannot be isolated. A BEHAVIORAL outcome indicates the model functions but behavior changes. Components classified NONE show no significant impact. Note that GENERAL components may still be behaviorally relevant --- a component can be both generally important and part of the behavioral circuit. The GENERAL classification reflects the ablation outcome (functionality loss prevents isolating behavior-specific effects), not a claim that the component is uninvolved in the behavior. Such components may warrant further investigation with more targeted interventions (e.g., partial ablation or LoRA removal).
 \end{definition}
 
 \subsection{Multi-Strategy Interaction Discovery}
@@ -2115,7 +2127,7 @@ For language models, the universal probe types instantiate as:
 
 \begin{remark}[Token Window Selection]
 \label{rem:token-window-selection}
-The generation window $N$ for $\pi_F$ should capture the decision phase, not execution. For safety behaviors, decisions typically lock in by tokens 3--4 (``I cannot...'' vs. ``Sure, here's...''), making $N=10$ sufficient with margin. Other behaviors may require different windows based on when their steering decisions manifest. Benefits of limited capture: reduced memory, faster processing, cleaner signal (decision without execution artifacts).
+The generation window $N$ for $\pi_F$ should capture the decision phase, not execution. For safety behaviors, decisions typically lock in by tokens 3--4 (``I cannot...'' vs. ``Sure, here's...''), making $N=10$ sufficient with margin. Other behaviors may require different windows based on when their steering decisions manifest. Benefits of limited capture: reduced memory, faster processing, cleaner signal (decision without execution artifacts). When comparing free-generation activations across signals or between pre- and post-training, the generated tokens may differ (e.g., ``I cannot'' vs. ``Sure, here's''), making position-by-position activation comparison unreliable beyond the decision window. For this reason, $\pi_F$ activation analysis should focus on the pre-decision and first-decision token positions rather than the full generated sequence.
 \end{remark}
 
 \begin{remark}[Teacher Forcing: Delta-of-Deltas Signal]
