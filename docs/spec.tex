@@ -307,50 +307,7 @@ t_{11} &= \text{DomainNative}(\text{neutral}) & &\text{(domain-appropriate task 
 \end{samepage}
 \end{definition}
 
-\subsubsection*{Optional: Confound-Specific Baseline Filtering}
-\label{sec:optional-confound-specific-baseline-filtering}
-
-The baseline filter can be enhanced when datasets exist that specifically target known confounds.
-
-\begin{definition}[Enhanced Baseline Structure]
-\label{def:enhanced-baseline-structure}
-The baseline set can be decomposed into general and confound-specific components:
-\begin{align}
-\mathcal{T}^0_{\text{general}} &= \{\text{domain-native training (e.g., general language modeling)}\} \\
-\mathcal{T}^0_{\text{confounds}} &= \{\text{confound-specific training datasets}\}
-\end{align}
-The combined baseline filter becomes:
-\begin{equation}
-\text{baseline\_filter}(\text{proj}) = \prod_{t \in \mathcal{T}^0_{\text{general}} \cup \mathcal{T}^0_{\text{confounds}}} \mathbf{1}\left[\|\Delta W^{(\text{proj})}_t\|_{\text{RMS}} < \Phi_{\tau_{\text{base}}}(\{\|\Delta W^{(\text{proj}')}_t\|_{\text{RMS}}\}_{\text{proj}' \in \mathcal{P}})\right]
-\end{equation}
-A projection passes the baseline filter only if it does not respond significantly to general domain training or any confound-specific training.
-\end{definition}
-
-\begin{remark}[Confound Examples for Safety Circuits]
-\label{rem:confound-examples-safety-circuits}
-Example confound datasets for safety behavior analysis:
-\begin{itemize}[nosep]
-\item Generic refusal templates (non-safety-specific politeness refusals)
-\item Incapability refusals (``I don't know enough about X'')
-\item Formatting/politeness patterns
-\item Domain-specific jargon unrelated to safety
-\end{itemize}
-If a projection changes during incapability-refusal training, it implements a generic refusal mechanism (filter out). If it doesn't change, it is potentially safety-specific (retain).
-\end{remark}
-
-\begin{remark}[Multiple Neutral Baselines]
-\label{rem:multiple-neutral-baselines}
-For high-stakes analyses such as safety circuit discovery, a single neutral baseline ($t_{11}$) provides limited filtering power. When computational budget allows, using multiple neutral baselines strengthens the baseline filter: general instruction following, harmless refusal-style text, domain-specific jargon training, and length/format-matched neutral completions each catch different categories of non-behavioral projections that a single baseline might miss.
-\end{remark}
-
-\begin{remark}[Confound Filtering vs. Geometric Correlation]
-\label{rem:confound-filtering-vs-geometric-correlation}
-Confound-specific filtering is more rigorous than post-hoc geometric correlation ($\rho_c$ in the geometry domain). It directly tests whether projections respond to confound \emph{training} rather than just correlating with confound directions. This catches projections that implement confound patterns even when geometric correlation is low.
-
-Use confound-specific filtering when confound datasets exist, confounds are well-defined and orthogonal to target behavior, and additional rigor is desired. Omit when no confound datasets are available or computational budget is limited. The framework remains fully functional with only $\mathcal{T}^0_{\text{general}}$.
-
-When using Option B for $\mathcal{M}_0$ (Definition~\ref{def:baseline-model}), confound-specific baselines become more targeted: the dominant instruction-following confound has already been absorbed into $\mathcal{M}_0$, so confound datasets can focus on subtler residual confounds (e.g., politeness patterns, formatting preferences) rather than the broad instruction-following signal that would otherwise dominate under Option A.
-\end{remark}
+The baseline filter can optionally be enhanced with confound-specific datasets that test whether projections respond to known confounds (e.g., generic refusal templates, verbosity, formatting) rather than the target behavior. For high-stakes analyses, multiple neutral baselines strengthen the filter further. Full definitions of the enhanced baseline structure, confound examples, and the relationship between confound filtering and geometric correlation appear in Appendix~\ref{app:confound-filtering}.
 
 \begin{remark}[Signal Distinctions]
 \label{rem:signal-distinctions}
@@ -388,19 +345,7 @@ The full 11-signal protocol maximizes discovery coverage and opposition measurem
 This captures the core $\mathcal{T}^+$/$\mathcal{T}^-$/$\mathcal{T}^0$ structure with one signal per cluster. The remaining signals (SFT, Cumulative, Anti, Negated variants) increase measurement robustness and enable effectiveness-weighted aggregation but are not required for initial circuit identification. Expand to the full set when computational budget allows.
 \end{remark}
 
-\begin{definition}[Signal-Specific Objectives]
-\label{def:signal-objectives}
-Each signal type defines a specific training objective $\mathcal{O}_i$ whose optimization produces the weight delta:
-\begin{equation}
-\mathcal{O}_i = \begin{cases}
-\mathbb{E}_{(x,y) \sim \mathcal{D}_i}\left[-\log p(y \mid x)\right] & \text{if } t_i \in \{\text{SFT signals}\} \\[0.5em]
--\mathbb{E}_{(x,y_w,y_l) \sim \mathcal{D}_i}\left[M(y_w, y_l \mid x)\right] & \text{if } t_i \in \{\text{preference signals}\} \\[0.5em]
--\mathbb{E}_{x \sim \mathcal{D}_i}\left[R(x)\right] & \text{if } t_i \in \{\text{RL signals}\} \\[0.5em]
--\mathbb{E}_{x \sim \mathcal{D}_i}\;\mathbb{E}_{y \sim \pi(\cdot|x)}\left[R(x,y)\right] & \text{if } t_i \in \{\text{GRPO signals}\}
-\end{cases}
-\end{equation}
-where $M(y_w, y_l \mid x)$ is the preference margin function (DPO, SimPO, etc.), $R(x)$ is the episode reward, and $\pi(\cdot|x)$ is the policy generating responses for group evaluation. Anti and Negated signals negate the relevant objective (gradient ascent rather than descent).
-\end{definition}
+Each signal type defines a specific training objective $\mathcal{O}_i$ (cross-entropy for SFT, preference margin for DPO/SimPO, reward for RL/GRPO). Anti and Negated signals negate the relevant objective (gradient ascent rather than descent). Full objective formulas appear in Appendix~\ref{app:signal-objectives}.
 
 \begin{definition}[Weight Delta]
 \label{def:weight-delta}
@@ -443,35 +388,8 @@ The confirmation criterion prevents selecting transient spikes as the peak:
 \begin{equation}
 \texttt{Confirmed}(\tau) = \bigl(m_{i,\tau} = \max_{\tau' \leq \tau} m_{i,\tau'}\bigr) \;\wedge\; \left(\frac{1}{K}\sum_{j=1}^{K} m_{i,\tau+j} \geq m_{i,\tau} - \delta \cdot m_{i,\tau}\right)
 \end{equation}
-where $K$ is the confirmation window (default: $K=3$) and $\delta$ is the stability tolerance (default: $\delta = 0.05$). A candidate peak is confirmed only if it is the running maximum \emph{and} the subsequent $K$ evaluations remain within $\delta$ of the peak value.
+where $K$ is the confirmation window (default: $K=3$) and $\delta$ is the stability tolerance (default: $\delta = 0.05$). A candidate peak is confirmed only if it is the running maximum \emph{and} the subsequent $K$ evaluations remain within $\delta$ of the peak value. If training ends before $K$ subsequent evaluations are available, the final checkpoint is accepted as the peak if it is the running maximum. Peak selection scenarios, memory efficiency analysis, and configurable parameters appear in Appendix~\ref{app:peak-detail}.
 \end{definition}
-
-\begin{remark}[Peak Selection Scenarios]
-\label{rem:peak-selection-scenarios}
-Four canonical scenarios:
-\begin{itemize}[nosep]
-\item \textbf{Monotonic improvement:} $m_\tau$ increases throughout training. The final checkpoint is the peak. Peak selection reduces to using the last checkpoint.
-\item \textbf{Peak-then-decline:} $m_\tau$ rises, stabilizes, then drops. The confirmed peak captures the strongest behavioral state before degradation, which is exactly what DCAF needs.
-\item \textbf{Fluke spike:} $m_\tau$ briefly spikes but immediately drops. The confirmation window rejects the spike because subsequent evaluations fall below $m_\tau - \delta \cdot m_\tau$. The algorithm selects the next-best confirmed peak.
-\item \textbf{Multiple peaks:} $m_\tau$ oscillates with several local maxima. The algorithm selects the highest confirmed peak, ensuring a stable behavioral state.
-\end{itemize}
-\end{remark}
-
-\begin{remark}[Memory Efficiency]
-\label{rem:peak-memory-efficiency}
-Peak tracking requires $O(2)$ additional storage per signal: the current confirmed-best checkpoint and the current candidate checkpoint under evaluation. Prior checkpoints can be discarded once a new confirmed peak supersedes them.
-\end{remark}
-
-\begin{remark}[Peak Evaluation Parameters]
-\label{rem:peak-evaluation-parameters}
-Peak checkpoint selection introduces three parameters:
-\begin{itemize}[nosep]
-\item \textbf{Peak evaluation interval} (default: 50 steps): How frequently to evaluate behavioral metrics during training. Lower values provide finer-grained peak detection at higher computational cost.
-\item \textbf{Peak confirmation window} $K$ (default: 3): Number of subsequent evaluations required to confirm a peak. Higher values provide greater confidence but may miss peaks near the end of training.
-\item \textbf{Peak stability tolerance} $\delta$ (default: 0.05): Maximum fractional decline permitted in the confirmation window. Lower values require more stringent stability.
-\end{itemize}
-If training ends before $K$ subsequent evaluations are available, the final checkpoint is accepted as the peak if it is the running maximum. This ensures peak selection always produces a result, though peaks confirmed only at end-of-training carry less stability evidence than those confirmed mid-training.
-\end{remark}
 
 \begin{figure}[H]
 \centering
@@ -2695,6 +2613,89 @@ $\text{AUC}$ & Area under ROC curve \\
 \bottomrule
 \end{tabular}
 \end{center}
+
+\section{Signal-Specific Objectives}
+\label{app:signal-objectives}
+
+\begin{definition}[Signal-Specific Objectives]
+Each signal type defines a specific training objective $\mathcal{O}_i$ whose optimization produces the weight delta:
+\begin{equation}
+\mathcal{O}_i = \begin{cases}
+\mathbb{E}_{(x,y) \sim \mathcal{D}_i}\left[-\log p(y \mid x)\right] & \text{if } t_i \in \{\text{SFT signals}\} \\[0.5em]
+-\mathbb{E}_{(x,y_w,y_l) \sim \mathcal{D}_i}\left[M(y_w, y_l \mid x)\right] & \text{if } t_i \in \{\text{preference signals}\} \\[0.5em]
+-\mathbb{E}_{x \sim \mathcal{D}_i}\left[R(x)\right] & \text{if } t_i \in \{\text{RL signals}\} \\[0.5em]
+-\mathbb{E}_{x \sim \mathcal{D}_i}\;\mathbb{E}_{y \sim \pi(\cdot|x)}\left[R(x,y)\right] & \text{if } t_i \in \{\text{GRPO signals}\}
+\end{cases}
+\end{equation}
+where $M(y_w, y_l \mid x)$ is the preference margin function (DPO, SimPO, etc.), $R(x)$ is the episode reward, and $\pi(\cdot|x)$ is the policy generating responses for group evaluation. Anti and Negated signals negate the relevant objective (gradient ascent rather than descent).
+\end{definition}
+
+\section{Peak Checkpoint Selection: Extended Detail}
+\label{app:peak-detail}
+
+\begin{remark}[Peak Selection Scenarios]
+Four canonical scenarios:
+\begin{itemize}[nosep]
+\item \textbf{Monotonic improvement:} $m_\tau$ increases throughout training. The final checkpoint is the peak. Peak selection reduces to using the last checkpoint.
+\item \textbf{Peak-then-decline:} $m_\tau$ rises, stabilizes, then drops. The confirmed peak captures the strongest behavioral state before degradation, which is exactly what DCAF needs.
+\item \textbf{Fluke spike:} $m_\tau$ briefly spikes but immediately drops. The confirmation window rejects the spike because subsequent evaluations fall below $m_\tau - \delta \cdot m_\tau$. The algorithm selects the next-best confirmed peak.
+\item \textbf{Multiple peaks:} $m_\tau$ oscillates with several local maxima. The algorithm selects the highest confirmed peak, ensuring a stable behavioral state.
+\end{itemize}
+\end{remark}
+
+\begin{remark}[Memory Efficiency]
+Peak tracking requires $O(2)$ additional storage per signal: the current confirmed-best checkpoint and the current candidate checkpoint under evaluation. Prior checkpoints can be discarded once a new confirmed peak supersedes them.
+\end{remark}
+
+\begin{remark}[Peak Evaluation Parameters]
+Peak checkpoint selection introduces three parameters:
+\begin{itemize}[nosep]
+\item \textbf{Peak evaluation interval} (default: 50 steps): How frequently to evaluate behavioral metrics during training. Lower values provide finer-grained peak detection at higher computational cost.
+\item \textbf{Peak confirmation window} $K$ (default: 3): Number of subsequent evaluations required to confirm a peak. Higher values provide greater confidence but may miss peaks near the end of training.
+\item \textbf{Peak stability tolerance} $\delta$ (default: 0.05): Maximum fractional decline permitted in the confirmation window. Lower values require more stringent stability.
+\end{itemize}
+\end{remark}
+
+\section{Confound-Specific Baseline Filtering}
+\label{app:confound-filtering}
+
+The baseline filter can be enhanced when datasets exist that specifically target known confounds.
+
+\begin{definition}[Enhanced Baseline Structure]
+The baseline set can be decomposed into general and confound-specific components:
+\begin{align}
+\mathcal{T}^0_{\text{general}} &= \{\text{domain-native training (e.g., general language modeling)}\} \\
+\mathcal{T}^0_{\text{confounds}} &= \{\text{confound-specific training datasets}\}
+\end{align}
+The combined baseline filter becomes:
+\begin{equation}
+\text{baseline\_filter}(\text{proj}) = \prod_{t \in \mathcal{T}^0_{\text{general}} \cup \mathcal{T}^0_{\text{confounds}}} \mathbf{1}\left[\|\Delta W^{(\text{proj})}_t\|_{\text{RMS}} < \Phi_{\tau_{\text{base}}}(\{\|\Delta W^{(\text{proj}')}_t\|_{\text{RMS}}\}_{\text{proj}' \in \mathcal{P}})\right]
+\end{equation}
+A projection passes the baseline filter only if it does not respond significantly to general domain training or any confound-specific training.
+\end{definition}
+
+\begin{remark}[Confound Examples for Safety Circuits]
+Example confound datasets for safety behavior analysis:
+\begin{itemize}[nosep]
+\item Generic refusal templates (non-safety-specific politeness refusals)
+\item Incapability refusals (``I don't know enough about X'')
+\item Formatting/politeness patterns
+\item Domain-specific jargon unrelated to safety
+\end{itemize}
+If a projection changes during incapability-refusal training, it implements a generic refusal mechanism (filter out). If it doesn't change, it is potentially safety-specific (retain).
+\end{remark}
+
+\begin{remark}[Multiple Neutral Baselines]
+For high-stakes analyses such as safety circuit discovery, a single neutral baseline ($t_{11}$) provides limited filtering power. When computational budget allows, using multiple neutral baselines strengthens the baseline filter: general instruction following, harmless refusal-style text, domain-specific jargon training, and length/format-matched neutral completions each catch different categories of non-behavioral projections that a single baseline might miss.
+\end{remark}
+
+\begin{remark}[Confound Filtering vs. Geometric Correlation]
+Confound-specific filtering is more rigorous than post-hoc geometric correlation ($\rho_c$ in the geometry domain). It directly tests whether projections respond to confound \emph{training} rather than just correlating with confound directions. This catches projections that implement confound patterns even when geometric correlation is low.
+
+Use confound-specific filtering when confound datasets exist, confounds are well-defined and orthogonal to target behavior, and additional rigor is desired. Omit when no confound datasets are available or computational budget is limited. The framework remains fully functional with only $\mathcal{T}^0_{\text{general}}$.
+
+When using Option B for $\mathcal{M}_0$ (Definition~\ref{def:baseline-model}), confound-specific baselines become more targeted: the dominant instruction-following confound has already been absorbed into $\mathcal{M}_0$, so confound datasets can focus on subtler residual confounds (e.g., politeness patterns, formatting preferences) rather than the broad instruction-following signal that would otherwise dominate under Option A.
+\end{remark}
 
 \section{Significance Predicates}
 \label{app:significance}
