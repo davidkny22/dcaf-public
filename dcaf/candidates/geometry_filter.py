@@ -7,7 +7,7 @@ Geometry filtering validates that candidates exhibit consistent
 representational structure (linear representations, direction coherence).
 """
 
-from typing import Dict, Set, List, Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from dcaf.core.defaults import TAU_G_DEFAULT
 
@@ -37,12 +37,10 @@ def filter_by_geometry_confidence(
     for param_id in candidates:
         component = component_map.get(param_id)
         if component is None:
-            # No component mapping - include by default
-            passed.add(param_id)
             continue
 
         c_g = geometry_confidences.get(component)
-        if c_g is None or c_g >= tau_G:
+        if c_g is not None and c_g >= tau_G:
             passed.add(param_id)
 
     return passed

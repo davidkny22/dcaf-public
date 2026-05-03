@@ -1,5 +1,5 @@
 """
-Activation delta alignment diagnostics (§7, Def 7.1).
+Activation delta alignment diagnostics (sec:activation-delta-alignment; def:delta-alignment).
 
 Measures whether training signals within each cluster (T+, T-) move
 activations in the same direction. High intra-cluster alignment with
@@ -11,9 +11,9 @@ Expected values:
     opposition  < -0.5 (T+ and T- deltas oppose each other)
 """
 
-from dataclasses import dataclass
-from typing import Dict, List, Any, Optional
 import logging
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn.functional as F
@@ -161,6 +161,14 @@ def compute_activation_delta_alignment(
             plus_deltas.append(flat)
         elif cluster == "-":
             minus_deltas.append(flat)
+
+    # Truncate ALL deltas (plus + minus) to a shared minimum length
+    # so cross-cosine between plus[i] and minus[j] works
+    all_deltas = plus_deltas + minus_deltas
+    if all_deltas:
+        min_len = min(v.numel() for v in all_deltas)
+        plus_deltas = [v[:min_len] for v in plus_deltas]
+        minus_deltas = [v[:min_len] for v in minus_deltas]
 
     if not plus_deltas and not minus_deltas:
         logger.debug("No activation deltas found for component %s", component)

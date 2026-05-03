@@ -1,5 +1,5 @@
 """
-Discovery integration and output (§3 Multi-Path Discovery: H_disc = H_W ∪ H_A ∪ H_G).
+Discovery integration and output (sec:discovery-integration: H_disc = H_W ∪ H_A ∪ H_G).
 
 Combines discovery sets from all three paths into a unified discovery result
 and serialises it to JSON for downstream analysis.
@@ -9,14 +9,11 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Set, Any, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from dcaf.core.defaults import BETA_PATH
 from dcaf.discovery import (
-    compute_discovery_union,
-    compute_all_discovery_info,
     create_discovery_result,
-    DiscoveryResult,
 )
 
 logger = logging.getLogger(__name__)

@@ -4,16 +4,17 @@ Single parameter ablation strategy.
 Ablates one parameter at a time to identify individually critical parameters.
 """
 
-from typing import List, Optional, Callable
+from typing import Callable, List, Optional
+
 from transformers import PreTrainedModel, PreTrainedTokenizer
 
-from dcaf.ablation.strategies.base import AblationStrategy, CoherenceMethod
 from dcaf.ablation.methods import ModelStateManager
 from dcaf.ablation.results import (
     AblationConfig,
     ParamAblationResult,
     short_param_name,
 )
+from dcaf.ablation.strategies.base import AblationStrategy, CoherenceMethod
 from dcaf.data.prompt_legacy import BENIGN_TEST_PROMPTS
 
 
@@ -87,9 +88,15 @@ class SingleParamAblation(AblationStrategy):
         # Reset to safety state
         self.state_manager.reset_to_safety()
 
-        # Ablate this parameter
+        # Ablate this parameter — always restore on exit
         self.state_manager.ablate_params([param])
+        try:
+            return self._test_ablated_param(param, harmful_prompts)
+        finally:
+            self.state_manager.restore_params([param])
 
+    def _test_ablated_param(self, param: str, harmful_prompts) -> "ParamAblationResult":
+        """Test a param that is already ablated. Called by test_single_param."""
         # Test coherence first (round one - model function check)
         coherent, coherence_score = self.test_coherence(
             prompts=self.benign_prompts,

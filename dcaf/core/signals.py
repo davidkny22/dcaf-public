@@ -1,9 +1,9 @@
-"""Training signal definitions (Def 1.6-1.7).
+"""Training signal definitions (def:training-signals; def:canonical-signal-instantiation).
 
 The 11 canonical signals partitioned into T+, T-, and T0 clusters.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Literal
 
 

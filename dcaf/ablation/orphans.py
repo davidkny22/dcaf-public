@@ -1,20 +1,20 @@
 """
-Phase 6: Orphan analysis (§11, Def 11.16-11.18).
+Phase 6: Orphan analysis (sec:phase-6-orphan-analysis).
 
-Def 11.16: O = {k ∈ H_cand : k not confirmed by any Phase 1-5 configuration}.
+def:orphan-components: O = {k ∈ H_cand : k not confirmed by any Phase 1-5 configuration}.
 Components that passed all three domain confidence filters (C_W, C_A, C_G)
 but showed no individual effect, no significant pair, and no significant triple.
 
-Def 11.17: High-confidence orphans O_high = {k ∈ O : C^(k) > τ_orphan}
+def:high-confidence-orphans: High-confidence orphans O_high = {k ∈ O : C^(k) > τ_orphan}
 (default τ_orphan = 0.6). Re-tested paired with every H_solo component
 and with other O_high orphans. Confirmed orphans are promoted to PAIR.
 
-Def 11.18: Low-confidence orphans O_low = {k ∈ O : C^(k) ≤ τ_orphan}.
+def:low-confidence-orphans: Low-confidence orphans O_low = {k ∈ O : C^(k) ≤ τ_orphan}.
 Flagged for optional exhaustive pairwise testing when budget allows.
 """
 
-from typing import Dict, List, Any, Callable, Optional
 from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
 
 from dcaf.ablation.methods import ModelStateManager
 from dcaf.core.defaults import TAU_ABS, TAU_ORPHAN

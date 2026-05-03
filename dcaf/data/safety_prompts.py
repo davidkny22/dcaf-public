@@ -16,9 +16,9 @@ These datasets enable identification of which circuits activate
 differently for safety-relevant behaviors.
 """
 
-from typing import List, Tuple, Dict
 from dataclasses import dataclass
 from enum import Enum
+from typing import List, Tuple
 
 
 class SafetyCategory(Enum):

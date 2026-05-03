@@ -13,8 +13,11 @@ Implements the DCAFTrainer class, which:
 Production use goes through TrainingOrchestrator in dcaf.training.variants.
 """
 
+import atexit
 import gc
 import logging
+import signal
+import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Set
 
@@ -24,6 +27,31 @@ from tqdm import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizer
 
 logger = logging.getLogger(__name__)
+
+
+def _cleanup_distributed():
+    """Destroy torch.distributed process group on exit.
+
+    Prevents orphaned FileStore locks on Windows that block future
+    torch imports after process kill.
+    """
+    try:
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            torch.distributed.destroy_process_group()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
+atexit.register(_cleanup_distributed)
+
+if sys.platform == "win32":
+    def _sigint_handler(signum, frame):
+        _cleanup_distributed()
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGINT, _sigint_handler)
 
 
 # Import shared utilities (single source of truth for exclusion patterns)
@@ -490,8 +518,10 @@ class DCAFTrainer:
             logger.info("  Peak checkpoint tracking enabled")
 
         import sys
+        import tempfile
+        _tmp_output = tempfile.mkdtemp(prefix=f"dcaf_{principle}_")
         config = CPOConfig(
-            output_dir=f"./dcaf_{principle}",
+            output_dir=_tmp_output,
             loss_type="simpo",
             cpo_alpha=0.0,
             simpo_gamma=1.0,
@@ -503,6 +533,7 @@ class DCAFTrainer:
             learning_rate=self.config.simpo_learning_rate,
             logging_steps=10,
             report_to="none",
+            save_strategy="no",
             remove_unused_columns=False,
             bf16=_supports_bf16(self.device),
             fp16=False,
@@ -546,6 +577,8 @@ class DCAFTrainer:
         try:
             trainer.train()
         finally:
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                torch.distributed.destroy_process_group()
             if hasattr(trainer, 'accelerator'):
                 trainer.accelerator.free_memory()
             del trainer
@@ -553,6 +586,8 @@ class DCAFTrainer:
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
                 torch.cuda.empty_cache()
+            import shutil
+            shutil.rmtree(_tmp_output, ignore_errors=True)
             logger.info("  [Trainer memory freed]")
 
         # If peak tracking was used, restore peak weights to model

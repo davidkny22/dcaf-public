@@ -11,25 +11,36 @@ Usage:
 import logging
 import re
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
 
-import torch
-
+from dcaf.arch.transformer import parse_param_metadata
 from dcaf.core.defaults import (
-    TAU_W_DEFAULT,
     TAU_A_DEFAULT,
     TAU_G_DEFAULT,
+    TAU_W_DEFAULT,
     TOP_K_CANDIDATES,
 )
-from dcaf.arch.transformer import parse_param_metadata
 
 logger = logging.getLogger(__name__)
 
 
 def _param_to_component(param_name: Optional[str]) -> Optional[str]:
-    """Map a transformer parameter name to the component IDs used by analysis."""
+    """Map a parameter or projection ID to the component ID used by analysis.
+
+    Handles both:
+    - Projection IDs (e.g., "L5H3_Q" -> "L5H3", "L10_MLP_gate" -> "L10_MLP")
+    - Raw HF param names (e.g., "transformer.h.5.attn.c_attn.weight" -> "L5H")
+    """
     if not param_name:
         return None
+
+    # Projection ID format: L{layer}H{head}_{proj} or L{layer}_MLP_{proj}
+    if param_name.startswith("L") and ("H" in param_name or "_MLP" in param_name):
+        if "_MLP" in param_name:
+            return param_name.split("_MLP")[0] + "_MLP"
+        if "H" in param_name and "_" in param_name:
+            return param_name.rsplit("_", 1)[0]
+        return param_name
 
     meta = parse_param_metadata(param_name)
     layer = meta.get("layer")
@@ -70,6 +81,7 @@ def run_full_analysis(
     skip_geometry: bool = False,
     skip_circuit: bool = False,
     device: str = "cuda",
+    direction_method: str = "whitened_svd",
 ) -> Dict[str, Any]:
     """
     Run full DCAF analysis pipeline.
@@ -93,22 +105,23 @@ def run_full_analysis(
         skip_geometry: Skip geometry domain
         skip_circuit: Skip circuit analysis
         device: Device to use
+        direction_method: Geometry direction extractor ("whitened_svd" or "dim")
 
     Returns:
         Complete analysis results dict
     """
-    from dcaf.storage import DeltaStore
     from dcaf.candidates import (
-        CandidateSet,
         CandidateInfo,
+        CandidateSet,
         CandidateStatus,
         create_discovery_set,
         create_validated_set,
     )
     from dcaf.confidence import (
-        triangulate_batch,
         ThresholdConfig,
+        triangulate_batch,
     )
+    from dcaf.storage import DeltaStore
 
     logger.info("=" * 60)
     logger.info("FULL DCAF ANALYSIS PIPELINE")
@@ -129,8 +142,8 @@ def run_full_analysis(
     logger.info(f"Model: {model_name}")
     threshold_config = ThresholdConfig(tau_W=tau_W, tau_A=tau_A, tau_G=tau_G)
     logger.info(
-        f"Thresholds: τ_W={tau_W}, τ_A={tau_A}, τ_G={tau_G}, "
-        f"τ_unified={threshold_config.tau_unified}"
+        f"Thresholds: tau_W={tau_W}, tau_A={tau_A}, tau_G={tau_G}, "
+        f"tau_unified={threshold_config.tau_unified}"
     )
 
     results = {
@@ -140,6 +153,7 @@ def run_full_analysis(
             "tau_W": tau_W,
             "tau_A": tau_A,
             "tau_G": tau_G,
+            "direction_method": direction_method,
             "tau_unified": threshold_config.tau_unified,
         },
     }
@@ -149,7 +163,6 @@ def run_full_analysis(
     discovery_info = None
     H_disc = None
     use_precomputed_discovery = False
-    discovery_param_names: Dict[int, str] = {}
 
     if discovery_path.exists():
         logger.info("\n" + "-" * 60)
@@ -158,18 +171,13 @@ def run_full_analysis(
         logger.info(f"Found: {discovery_path}")
 
         from dcaf.cli._discover.integration import (
-            load_discovery_result,
             discovery_result_to_sets,
+            load_discovery_result,
         )
 
         discovery_data = load_discovery_result(discovery_path)
         H_disc, discovery_info, H_W_loaded, H_A_loaded, H_G_loaded = discovery_result_to_sets(discovery_data)
         use_precomputed_discovery = True
-        for idx, name in discovery_data.get("param_index_to_name", {}).items():
-            try:
-                discovery_param_names[int(idx)] = name
-            except (TypeError, ValueError):
-                continue
 
         results["discovery"] = {
             "source": "discovery.json",
@@ -180,7 +188,7 @@ def run_full_analysis(
             "summary": discovery_data.get("summary", {}),
         }
 
-        logger.info(f"H_disc: {len(H_disc)} parameters from discovery.json")
+        logger.info(f"H_disc: {len(H_disc)} from discovery.json")
         logger.info(f"  H_W: {len(H_W_loaded)}, H_A: {len(H_A_loaded)}, H_G: {len(H_G_loaded)}")
         logger.info(f"  Multi-path: {discovery_data.get('summary', {}).get('multi_path_count', 0)}")
     else:
@@ -211,23 +219,28 @@ def run_full_analysis(
         "summary": weight_results.get("summary", {}),
     }
 
-    logger.info(f"Weight analysis: {weight_results.get('passing_threshold', 0)} candidates passing τ_W")
+    logger.info(f"Weight analysis: {weight_results.get('passing_threshold', 0)} candidates passing tau_W")
 
-    # Build confidence dict and param names from the full weight score table.
-    weight_confidences = {
-        int(idx): score
-        for idx, score in weight_results.get("scores_by_param", {}).items()
-    }
-    param_names = dict(discovery_param_names)
-    param_names.update({
-        int(idx): name
-        for idx, name in weight_results.get("param_index_to_name", {}).items()
-    })
-    component_map = {}
-    for idx, pname in param_names.items():
-        component = _param_to_component(pname)
+    # Build confidence and component maps from weight analysis.
+    # Weight runner now returns projection IDs (e.g. "L5H3_Q") as keys.
+    weight_confidences: Dict[str, float] = {}
+    for candidate in weight_results.get("all_candidates", []):
+        proj_id = candidate.get("param_name", "")
+        if proj_id:
+            weight_confidences[proj_id] = candidate.get("C_W", 0.0)
+
+    # Also accept scores_by_param for backward compatibility
+    if not weight_confidences:
+        for idx, score in weight_results.get("scores_by_param", {}).items():
+            name = weight_results.get("param_index_to_name", {}).get(idx)
+            if name:
+                weight_confidences[name] = score
+
+    component_map: Dict[str, str] = {}
+    for proj_id in weight_confidences:
+        component = _param_to_component(proj_id)
         if component:
-            component_map[idx] = component
+            component_map[proj_id] = component
 
     # Create H_W from weight analysis (used when no discovery.json)
     H_W = create_discovery_set(
@@ -281,7 +294,7 @@ def run_full_analysis(
                     activation_confidences[comp_data["component"]] = comp_data["C_A"]
             activation_confidences = _with_attention_layer_aggregates(activation_confidences)
 
-            logger.info(f"Activation analysis: {activation_results.get('passing_threshold', 0)} components passing τ_A")
+            logger.info(f"Activation analysis: {activation_results.get('passing_threshold', 0)} components passing tau_A")
 
         except Exception as e:
             logger.warning(f"Activation analysis failed: {e}")
@@ -310,6 +323,7 @@ def run_full_analysis(
                 probe_size=probe_size,
                 top_k=100,
                 device=device,
+                direction_method=direction_method,
             )
 
             results["geometry"] = {
@@ -327,7 +341,7 @@ def run_full_analysis(
                     geometry_confidences[comp_data["component"]] = comp_data["C_G"]
             geometry_confidences = _with_attention_layer_aggregates(geometry_confidences)
 
-            logger.info(f"Geometry analysis: {geometry_results.get('passing_threshold', 0)} components passing τ_G")
+            logger.info(f"Geometry analysis: {geometry_results.get('passing_threshold', 0)} components passing tau_G")
 
         except Exception as e:
             logger.warning(f"Geometry analysis failed: {e}")
@@ -349,24 +363,23 @@ def run_full_analysis(
     base_discovery_set = H_W
     if use_precomputed_discovery and H_disc:
         candidates = {}
-        for idx in H_disc:
-            if idx not in component_map and idx in param_names:
-                component = _param_to_component(param_names[idx])
-                if component:
-                    component_map[idx] = component
-            candidates[idx] = CandidateInfo(
-                id=idx,
+        for disc_id in H_disc:
+            comp = _param_to_component(str(disc_id)) if disc_id not in component_map else component_map.get(disc_id)
+            if comp:
+                component_map[disc_id] = comp
+            candidates[disc_id] = CandidateInfo(
+                id=disc_id,
                 status=CandidateStatus.DISCOVERY,
-                C_W=weight_confidences.get(idx),
-                discovery=discovery_info.get(idx) if discovery_info else None,
-                component=component_map.get(idx),
+                C_W=weight_confidences.get(disc_id),
+                discovery=discovery_info.get(disc_id) if discovery_info else None,
+                component=component_map.get(disc_id),
             )
         base_discovery_set = CandidateSet(
             name="H_disc",
             candidates=candidates,
             threshold_config=threshold_config,
         )
-        logger.info(f"Using H_disc from discovery.json: {len(H_disc)} params")
+        logger.info(f"Using H_disc from discovery.json: {len(H_disc)}")
 
     # Create H_cand by filtering through activation and geometry
     H_cand = create_validated_set(
@@ -421,7 +434,7 @@ def run_full_analysis(
     results["top_candidates"] = [
         {
             "id": cid,
-            "param_name": param_names.get(cid),
+            "param_name": str(cid),
             "component": (
                 H_cand.candidates[cid].component
                 if cid in H_cand.candidates else None
@@ -474,7 +487,7 @@ def run_full_analysis(
     logger.info(f"Top triangulated: {len(results['top_candidates'])} params")
 
     if results["top_candidates"]:
-        logger.info(f"\nTop 5 candidates by unified confidence:")
+        logger.info("\nTop 5 candidates by unified confidence:")
         for i, c in enumerate(results["top_candidates"][:5]):
             name = c.get("param_name", f"idx_{c['id']}")
             if name and len(name) > 40:
@@ -503,7 +516,7 @@ def display_full_results(results: Dict[str, Any]) -> None:
     print(f"Model: {results.get('model_name')}")
 
     thresholds = results.get("thresholds", {})
-    print(f"Thresholds: τ_W={thresholds.get('tau_W')}, τ_A={thresholds.get('tau_A')}, τ_G={thresholds.get('tau_G')}")
+    print(f"Thresholds: tau_W={thresholds.get('tau_W')}, tau_A={thresholds.get('tau_A')}, tau_G={thresholds.get('tau_G')}")
 
     print("\n" + "-" * 70)
     print("DOMAIN SUMMARY")

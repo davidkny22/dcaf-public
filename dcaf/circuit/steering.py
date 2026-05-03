@@ -1,23 +1,24 @@
 """
-Steering vector optimization (§10, Def 10.1-10.5).
+Steering vector optimization (sec:steering).
 
 Implements bidirectional steering vector optimization and analysis:
 
-- Def 10.1: Target steering vector v*_{k,+} = argmax_v L_target(M0 + v·e_k)
-- Def 10.2: Opposite steering vector v*_{k,-} = argmax_v L_opposite(M0 + v·e_k)
-- Def 10.3: Steering-geometry alignment metrics (alpha_+, alpha_-, alpha_pm)
-- Def 10.4: Steering effectiveness measurement
+- def:target-steering-vector: Target steering vector v*_{k,+} = argmax_v L_target(M0 + v·e_k)
+- def:opposite-steering-vector: Opposite steering vector v*_{k,-} = argmax_v L_opposite(M0 + v·e_k)
+- def:steering-geometry-alignment: Steering-geometry alignment metrics (alpha_+, alpha_-, alpha_pm)
+- def:bidirectional-steering-effectiveness: Steering effectiveness measurement
 - Def 10.5: Defensive vectors for protection (reinforce / block_attack)
 
-Note: This is the real §10 implementation. The module dcaf.steering.vectors
+Note: This is the real sec:steering implementation. The module dcaf.steering.vectors
 is a backward-compatible stub that re-exports from here.
 """
 
-from typing import Dict, List, Any, Callable, Optional, Tuple
 from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
 import torch
-from torch import Tensor
 import torch.nn.functional as F
+from torch import Tensor
 
 from dcaf.core.defaults import EPS_GENERAL
 

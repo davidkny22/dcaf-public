@@ -1,18 +1,17 @@
-"""Transformer architecture utilities (§15).
+"""Transformer architecture utilities (app:arch).
 
 Parameter parsing, component resolution, and exclusion patterns
 for transformer-based models (LLaMA, Gemma, GPT-2, Pythia).
 
 Implements:
-  - Remark 1.3 (Excluded from Analysis): exclusion of embeddings, layer norms,
+  - rem:excluded-from-analysis: exclusion of embeddings, layer norms,
     and positional encodings from the projection set P.
-  - §15.2 (Component Decomposition): mapping parameter names to layer/component
+  - sec:llm-component-decomposition: mapping parameter names to layer/component
     metadata and resolving component IDs to parameter name lists.
 """
 
 import re
 from typing import Any, Dict, List, Optional, Tuple
-
 
 EXCLUDED_PARAM_PATTERNS = [
     "embed_out", "embed_in", "wte", "wpe", "lm_head",
@@ -23,7 +22,7 @@ EXCLUDED_PARAM_PATTERNS = [
 
 
 def should_exclude_param(param_name: str) -> bool:
-    """Check if a parameter should be excluded from circuit analysis (Remark 1.3).
+    """Check if a parameter should be excluded from circuit analysis (rem:excluded-from-analysis).
 
     Excludes: embeddings, layer norms, positional encodings — shared
     input/output transformations, not behavioral circuit components.
@@ -80,19 +79,30 @@ def parse_param_metadata(param_name: str) -> Dict[str, Optional[Any]]:
 def get_component_params(component: str, all_params: List[str]) -> List[str]:
     """Resolve a component ID to its parameter names.
 
-    Component ID formats (Remark 15.2):
-      L{n}_MLP  -> model.layers.{n}.mlp.*
-      L{n}H{h}  -> model.layers.{n}.self_attn.*
+    Handles LLaMA, GPT-2, and Pythia/GPT-NeoX architectures.
+
+    Component ID formats:
+      L{n}_MLP  -> mlp params at layer n
+      L{n}H{h}  -> attention params at layer n (all heads share weight matrices
+                    in GPT-2/Pythia, so returns the full attention weight)
     """
     if "_MLP" in component:
         layer_num = component.split("_")[0][1:]
-        prefix = f"model.layers.{layer_num}.mlp."
-        return [p for p in all_params if prefix in p]
+        prefixes = [
+            f"model.layers.{layer_num}.mlp.",       # LLaMA
+            f"transformer.h.{layer_num}.mlp.",       # GPT-2
+            f"gpt_neox.layers.{layer_num}.mlp.",     # Pythia
+        ]
+        return [p for p in all_params if any(p.startswith(pfx) for pfx in prefixes)]
     elif component.startswith("L") and "H" in component:
         parts = component[1:].split("H")
         layer_num = parts[0]
-        prefix = f"model.layers.{layer_num}.self_attn."
-        return [p for p in all_params if prefix in p]
+        prefixes = [
+            f"model.layers.{layer_num}.self_attn.",  # LLaMA
+            f"transformer.h.{layer_num}.attn.",      # GPT-2
+            f"gpt_neox.layers.{layer_num}.attention.",  # Pythia
+        ]
+        return [p for p in all_params if any(p.startswith(pfx) for pfx in prefixes)]
     else:
         return [p for p in all_params if component in p]
 

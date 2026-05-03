@@ -5,7 +5,7 @@ Used by the CLI to present analysis results in a human-readable format.
 """
 
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, Optional
 
 from dcaf.ablation.results import AblationResults
 

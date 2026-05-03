@@ -5,8 +5,8 @@ Provides functions to compute relevance confidence scores based on how many
 training signals (deltas) identified each parameter or component.
 """
 
-from typing import Dict, List, Any, Set
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Any, Dict, Set
 
 
 def compute_relevance_confidence(
@@ -33,7 +33,7 @@ def compute_relevance_confidence(
     """
     if total_available == 0:
         return 0.0
-    return signal_count / total_available
+    return min(1.0, signal_count / total_available)
 
 
 @dataclass

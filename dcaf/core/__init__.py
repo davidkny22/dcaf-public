@@ -1,5 +1,5 @@
-"""Core foundations (SS1-2): configuration, signals, topology, thresholds."""
+"""Core foundations: configuration, signals, topology, and thresholds."""
 
 from dcaf.core.config import DCAFConfig
-from dcaf.core.signals import TrainingSignal, CANONICAL_SIGNALS
+from dcaf.core.signals import CANONICAL_SIGNALS, TrainingSignal
 from dcaf.core.structures import SVDDiagnostics

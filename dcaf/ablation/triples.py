@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from dcaf.ablation.methods import ModelStateManager
 from dcaf.ablation.superadditivity import (
+    InteractionRequirement,
     InteractionType,
     classify_interaction_requirement,
 )
@@ -137,10 +138,14 @@ def test_triple(
         triple_significant
     )
 
-    # Classify interaction requirement
-    interaction_req = classify_interaction_requirement(
-        individual_impacts, triple_impact, impact_threshold
-    )
+    # Classify interaction requirement — for triples, use gate check
+    # that considers pair impacts (not just individual)
+    if is_gate:
+        interaction_req = InteractionRequirement.GATE
+    else:
+        interaction_req = classify_interaction_requirement(
+            individual_impacts, triple_impact, impact_threshold
+        )
 
     # Classify interaction type (superadditivity)
     sum_individuals = sum(individual_impacts.values())

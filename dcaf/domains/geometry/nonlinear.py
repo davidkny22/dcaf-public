@@ -13,9 +13,9 @@ Diagnostics:
 - Procrustes structural mirror score: Alignment between T+ and T- embeddings
 """
 
-from dataclasses import dataclass
-from typing import Dict, List, Any, Optional
 import logging
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 import numpy as np
 import torch

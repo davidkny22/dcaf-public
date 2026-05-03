@@ -1,24 +1,25 @@
 """
-Interaction type classification and superadditivity testing (§11, Def 11.21).
+Interaction type classification and superadditivity testing
+(sec:superadditivity-and-interaction-classification; def:interaction-type-three).
 
-Def 11.21: Interaction types for PAIR and GATE components:
+def:interaction-type-three: Interaction types for PAIR and GATE components:
     SYNERGISTIC:  I(k1,k2) > I(k1) + I(k2) + ε_syn
     ADDITIVE:     |I(k1,k2) - (I(k1) + I(k2))| ≤ ε_syn
     REDUNDANT:    I(k1,k2) ≈ max(I(k1), I(k2))
 
 where ε_syn is the synergy detection threshold (default 0.05, EPSILON_TRI).
 
-InteractionRequirement (from Def 11.20): SOLO / PAIR / GATE — how many
+InteractionRequirement (from def:interaction-requirement): SOLO / PAIR / GATE — how many
 components are required for the behavioral effect (separate from how they
 combine when they do).
 """
 
-from typing import Dict, List, Any, Callable, Optional
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
 
-from dcaf.core.defaults import EPSILON_TRI, TAU_ABS
 from dcaf.ablation.methods import ModelStateManager
+from dcaf.core.defaults import EPSILON_TRI, SYNERGY_EPSILON, TAU_ABS
 
 
 class InteractionType(Enum):
@@ -197,7 +198,7 @@ def test_superadditivity(
     model,
     state_manager: ModelStateManager,
     test_fn: Callable[..., float],
-    epsilon: float = EPSILON_TRI,
+    epsilon: float = SYNERGY_EPSILON,
     test_kwargs: Optional[Dict[str, Any]] = None,
 ) -> SuperadditivityResult:
     """

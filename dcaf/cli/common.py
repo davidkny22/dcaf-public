@@ -12,17 +12,17 @@ from typing import Optional
 import torch
 
 from dcaf.core.defaults import (
-    TAU_SIG,
-    TAU_BASE,
-    TAU_ACT,
-    TAU_GRAD,
-    TAU_COMP,
-    TAU_W_DEFAULT,
-    TAU_A_DEFAULT,
-    TAU_G_DEFAULT,
     BETA_PATH,
-    TOP_K_CANDIDATES,
     LANGUAGE_PERCENTILE,
+    TAU_A_DEFAULT,
+    TAU_ACT,
+    TAU_BASE,
+    TAU_COMP,
+    TAU_G_DEFAULT,
+    TAU_GRAD,
+    TAU_SIG,
+    TAU_W_DEFAULT,
+    TOP_K_CANDIDATES,
 )
 
 logger = logging.getLogger(__name__)
@@ -265,6 +265,7 @@ def validate_run_path(run_path: str) -> bool:
 def load_model_name_from_metadata(run_path: str) -> Optional[str]:
     """Load model name from run metadata."""
     from pathlib import Path
+
     from dcaf.storage import DeltaStore
 
     path = Path(run_path)

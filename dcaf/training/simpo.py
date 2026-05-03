@@ -1,5 +1,5 @@
 """
-SimPO training helpers for DCAF (§1, Def 1.7 t1/t6 signals).
+SimPO training helpers for DCAF (def:canonical-signal-instantiation; t1/t6 signals).
 
 SimPO (Simple Preference Optimization) is a reference-free variant of DPO
 used for the PrefOpt signal family (t1 = target preference, t6 = opposite
@@ -17,18 +17,19 @@ in dcaf.training.trainer.  The standalone helpers here (prepare_hh_rlhf_for_dpo,
 create_simpo_trainer, train_with_simpo) are provided for direct use or testing.
 """
 
-from typing import Dict, List, Optional, Tuple, Any
+import logging
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
+
 import torch
 from torch.utils.data import Dataset
 from transformers import PreTrainedModel, PreTrainedTokenizer
-from dataclasses import dataclass
-import logging
 
 logger = logging.getLogger(__name__)
 
 # Try to import TRL
 try:
-    from trl import DPOTrainer, DPOConfig
+    from trl import DPOConfig, DPOTrainer
     TRL_AVAILABLE = True
 except ImportError:
     TRL_AVAILABLE = False
@@ -190,33 +191,36 @@ def create_simpo_trainer(
         tokenizer.pad_token = tokenizer.eos_token
         model.config.pad_token_id = tokenizer.pad_token_id
 
-    # Create DPO config with SimPO loss
-    dpo_config = DPOConfig(
+    # Create CPO config with SimPO loss (TRL >= 0.12)
+    try:
+        from trl import CPOConfig, CPOTrainer
+    except ImportError:
+        from trl import DPOConfig as CPOConfig
+        from trl import DPOTrainer as CPOTrainer
+
+    cpo_config = CPOConfig(
         output_dir=output_dir,
         beta=config.beta,
-        loss_type="simpo",  # Key: use SimPO loss
-        gamma_beta_ratio=config.gamma_beta_ratio,
-        max_length=config.max_length,
-        max_prompt_length=config.max_prompt_length,
+        loss_type="simpo",
+        cpo_alpha=0.0,
+        simpo_gamma=config.gamma_beta_ratio * config.beta,
         learning_rate=config.learning_rate,
         per_device_train_batch_size=config.batch_size,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
         num_train_epochs=config.num_train_epochs,
         max_steps=config.max_steps,
         logging_steps=config.logging_steps,
-        warmup_ratio=config.warmup_ratio,
         remove_unused_columns=False,
         bf16=torch.cuda.is_available() and torch.cuda.is_bf16_supported(),
-        gradient_checkpointing=True,  # Memory efficient
+        gradient_checkpointing=True,
+        report_to="none",
     )
 
-    # Create trainer - no ref_model needed for SimPO!
-    trainer = DPOTrainer(
+    trainer = CPOTrainer(
         model=model,
-        ref_model=None,  # SimPO doesn't need reference model
-        args=dpo_config,
+        args=cpo_config,
         train_dataset=train_dataset,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
     )
 
     return trainer

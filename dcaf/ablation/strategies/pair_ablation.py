@@ -6,10 +6,10 @@ Extracted from run_full_ablation.py.
 """
 
 from itertools import combinations
-from typing import List, Dict, Optional, Callable, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
+
 from transformers import PreTrainedModel, PreTrainedTokenizer
 
-from dcaf.ablation.strategies.base import AblationStrategy, CoherenceMethod
 from dcaf.ablation.methods import ModelStateManager
 from dcaf.ablation.results import (
     AblationConfig,
@@ -18,6 +18,7 @@ from dcaf.ablation.results import (
     PairAblationResults,
     short_param_name,
 )
+from dcaf.ablation.strategies.base import AblationStrategy, CoherenceMethod
 from dcaf.data.prompt_legacy import BENIGN_TEST_PROMPTS
 
 
@@ -188,11 +189,16 @@ class PairAblation(AblationStrategy):
         Returns:
             PairAblationResult
         """
-        # Reset to safety, then ablate both parameters
+        # Reset to safety, then ablate both parameters — always restore on exit
         self.state_manager.reset_to_safety()
         self.state_manager.ablate_params([param1, param2])
+        try:
+            return self._test_ablated_pair(param1, param2, prompts, criteria, pair_id)
+        finally:
+            self.state_manager.restore_params([param1, param2])
 
-        # Test coherence first (round one - model function check)
+    def _test_ablated_pair(self, param1, param2, prompts, criteria, pair_id):
+        """Test an already-ablated pair."""
         coherent, coherence_score = self.test_coherence(
             prompts=self.benign_prompts,
             method=self.coherence_method,

@@ -1,16 +1,15 @@
 """
 Projection-level weight confidence, aggregated to component level.
 
-Def 4.6-4.7 (§4.5):
+def:projection-level-weight-confidence; def:component-level-weight-confidence:
   C_W^(proj) = min(1, presence + α·opp_deg) × baseline_filter
   C_W^(k) = max_{proj ∈ component} C_W^(proj)
 """
 
-from typing import Dict, List, Set
+from typing import Dict, List
 
-import numpy as np
+from dcaf.core.defaults import ALPHA, TAU_BASE, TAU_SIG, Q
 
-from dcaf.core.defaults import TAU_SIG, TAU_BASE, ALPHA, Q
 from .significance import sig, sig_bar
 
 

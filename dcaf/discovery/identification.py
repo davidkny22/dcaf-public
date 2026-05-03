@@ -9,12 +9,12 @@ not the training layer.
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 import torch
 
-from dcaf.arch.transformer import should_exclude_param, parse_param_metadata
+from dcaf.arch.transformer import parse_param_metadata, should_exclude_param
 from dcaf.core.defaults import TAU_SIG, TOP_K_CANDIDATES
 
 logger = logging.getLogger(__name__)
@@ -70,8 +70,13 @@ def identify_candidates(
         return []
 
     magnitudes_np = np.array(all_magnitudes)
+    if magnitudes_np.max() <= 0:
+        logger.warning("All deltas are zero — no candidates to identify")
+        return []
     if threshold is None:
         threshold = float(np.percentile(magnitudes_np, percentile))
+        if threshold <= 0:
+            threshold = float(magnitudes_np.max()) * 0.01
 
     logger.info(f"Delta stats: mean={magnitudes_np.mean():.6f}, "
                 f"median={np.median(magnitudes_np):.6f}, "

@@ -1,11 +1,11 @@
 """
-Gradient-based discovery runner (H_G) (§3.13-3.16 Gradient Discovery).
+Gradient-based discovery runner (H_G) (sec:gradient-discovery).
 
 Identifies parameters with high behavioral gradients — mathematical
 predictions of what would affect behavior if modified.
 
   g(p) = Σ_{i∈T⁺∪T⁻} eff(i) · |∂O_i/∂p|
-  H_G = {p : g(p) >= Φ_τgrad}
+  H_G = {p : g(p) >= Phi_taugrad}
 
 Objective functions by signal type:
   SFT:           O = E[-log p(y|x)]
@@ -16,11 +16,11 @@ Objective functions by signal type:
 import gc
 import logging
 from pathlib import Path
-from typing import Dict, Set, Tuple, Any, Optional, List, Callable
+from typing import Any, Callable, Dict, List, Set, Tuple
 
 import torch
-from torch import Tensor
 import torch.nn as nn
+from torch import Tensor
 
 from dcaf.arch.transformer import should_exclude_param
 from dcaf.core.defaults import TAU_GRAD
@@ -29,7 +29,10 @@ from dcaf.discovery.gradient import (
     SignalObjective,
     compute_gradient_discovery_set,
 )
-from dcaf.domains.weight import create_uniform_effectiveness
+from dcaf.domains.weight import (
+    compute_effectiveness_from_training_metrics,
+    create_uniform_effectiveness,
+)
 from dcaf.storage.delta_store import DeltaStore
 
 logger = logging.getLogger(__name__)
@@ -116,7 +119,7 @@ def run_gradient_discovery(
                 'type': signal_type,
             })
 
-    logger.info(f"\nBehavioral signals for gradient computation:")
+    logger.info("\nBehavioral signals for gradient computation:")
     for sig in behavioral_signals:
         logger.info(f"  - {sig['id']} (T{sig['cluster']}, {sig['type']})")
 
@@ -124,8 +127,22 @@ def run_gradient_discovery(
         logger.warning("No behavioral signals found for gradient discovery")
         return set(), {}, []
 
-    # Create effectiveness scores
-    effectiveness = create_uniform_effectiveness(available_deltas)
+    # Create effectiveness scores from training metrics when available.
+    try:
+        metadata = delta_store.load_metadata()
+        training_metrics = metadata.extra.get("training_metrics", {})
+    except Exception as exc:
+        logger.warning("Could not load training metrics metadata: %s", exc)
+        training_metrics = {}
+
+    if training_metrics:
+        effectiveness = compute_effectiveness_from_training_metrics(
+            training_metrics,
+            available_deltas,
+        )
+    else:
+        logger.warning("No training metrics found; using uniform effectiveness")
+        effectiveness = create_uniform_effectiveness(available_deltas)
 
     # Build signal objectives
     signal_objectives = []
@@ -151,8 +168,12 @@ def run_gradient_discovery(
         )
 
     # Compute gradient discovery set
-    logger.info(f"\nComputing behavioral gradients...")
-    logger.info(f"This may take a while for large models...")
+    logger.info("\nComputing behavioral gradients...")
+    logger.info("This may take a while for large models...")
+
+    from dcaf.core.topology import build_model_topology
+    topo = build_model_topology(model)
+    logger.info(f"  Topology: {len(topo.projections)} projections — projection-level gradients")
 
     H_G_str, S_G_str = compute_gradient_discovery_set(
         model=model,
@@ -160,6 +181,7 @@ def run_gradient_discovery(
         data_batches=data_batches,
         effectiveness=effectiveness,
         tau_grad=tau_grad,
+        topology=topo,
     )
 
     # Build name_to_index mapping from delta store (same ordering as weight/activation)
@@ -373,7 +395,7 @@ def create_sample_batch(
     Returns:
         Batch dictionary with tensors
     """
-    from dcaf.data.test_banks import get_refusal_test_prompts, get_benign_test_prompts
+    from dcaf.data.test_banks import get_benign_test_prompts, get_refusal_test_prompts
 
     if signal_type == 'SFT':
         # For SFT, use simple prompts with completions

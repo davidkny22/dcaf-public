@@ -1,16 +1,16 @@
 """
 Predictivity computation.
 
-Def 6.11-6.12 (§6.5):
+def:direction-predictivity; def:predictivity-gain:
 pred(d) = AUC({a_j · d}, {y_j})
 Δ_pred^(k) = (1/|T+|) · Σ_{i∈T+} (pred_post - pred_pre)
 """
 
-from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
-import torch
-from torch import Tensor
+from typing import Dict, List, Tuple
+
 import numpy as np
+from torch import Tensor
 
 
 @dataclass
@@ -61,12 +61,27 @@ def compute_auc(
     if n_pos == 0 or n_neg == 0:
         return 0.5  # Undefined, return chance level
 
-    # Compute AUC using Mann-Whitney U statistic
-    # AUC = P(positive ranked higher than negative)
-    cum_pos = np.cumsum(sorted_labels == 1)
-    n_pairs_correct = np.sum(cum_pos[sorted_labels == 0])
+    # Compute AUC using Mann-Whitney U statistic with tie handling
+    sorted_proj = proj_np[sorted_indices]
+    u_stat = 0.0
+    cum_pos = 0
+    i = 0
+    n = len(sorted_proj)
+    while i < n:
+        # Find all tied scores
+        j = i
+        while j < n and sorted_proj[j] == sorted_proj[i]:
+            j += 1
+        # Count positives and negatives in this tie group
+        tie_pos = int(np.sum(sorted_labels[i:j] == 1))
+        tie_neg = int(np.sum(sorted_labels[i:j] == 0))
+        # Negatives in tie group: each gets credit for all positives ranked
+        # strictly higher, plus half credit for positives in the same tie group
+        u_stat += tie_neg * (cum_pos + 0.5 * tie_pos)
+        cum_pos += tie_pos
+        i = j
 
-    return n_pairs_correct / (n_pos * n_neg)
+    return u_stat / (n_pos * n_neg)
 
 
 def compute_predictivity(

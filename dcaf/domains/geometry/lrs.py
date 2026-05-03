@@ -1,15 +1,15 @@
 """
 Linear Representation Score computation.
 
-Implements Def 6.14 (§6.6):
+Implements def:lrs:
 LRS(k) = [(Σ_{i=1}^6 w_i · (x_i + ε)^p) / (Σ_{i=1}^6 w_i)]^{1/p}
 """
 
-from typing import Dict, List, Any, Optional
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
-from dcaf.core.defaults import P_LRS, EPSILON_TRI
+from dcaf.core.defaults import EPSILON_TRI, P_LRS
 
 
 def _clamp_unit(value: float) -> float:

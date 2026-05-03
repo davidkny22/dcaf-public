@@ -1,5 +1,5 @@
 """
-Circuit identification pipeline (§9, Def 9.9).
+Circuit identification pipeline (sec:circuit-graph; def:behavioral-circuit-graph).
 
 Implements the 7-step circuit identification pipeline:
 1. Component Identification — Map weight parameters to components
@@ -7,7 +7,7 @@ Implements the 7-step circuit identification pipeline:
 3. Attention Flow Refinement — Add correlational edges from attention patterns
 4. Graph Construction — Build directed graph G = (V, E)
 5. Circuit Extraction — Cluster into circuits (3 methods: disjoint, probe-response, functional)
-6. Circuit Validation — Test superadditive effects (§11)
+6. Circuit Validation — Test superadditive effects (sec:ablation)
 7. Flow Computation — Topological sort respecting layer order
 
 Based on:
@@ -16,21 +16,22 @@ Based on:
 - Standard ablation studies extended to track cross-component effects
 """
 
-from typing import Dict, List, Set, Optional, Tuple, Literal, TYPE_CHECKING
-from dataclasses import dataclass
-import re
 import logging
+import re
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Set
+
 import numpy as np
 import torch
 
-from dcaf.core.defaults import ATTENTION_WEIGHT, TAU_EDGE
-from dcaf.domains.activation import ProbeSet, ActivationDelta, ActivationSnapshot
+from dcaf.circuit.graph import CircuitGraph
 from dcaf.circuit.results import (
     Circuit,
-    CircuitValidation,
     CircuitAnalysisResults,
+    CircuitValidation,
 )
-from dcaf.circuit.graph import CircuitGraph, CircuitEdge
+from dcaf.core.defaults import ATTENTION_WEIGHT, TAU_EDGE
+from dcaf.domains.activation import ActivationDelta, ProbeSet
 
 logger = logging.getLogger(__name__)
 
@@ -121,18 +122,32 @@ class CircuitIdentifier:
         Returns:
             Component name (e.g., "L10_MLP" or "L10H")
         """
-        # Extract layer number
-        layer_match = re.search(r"layers?[._](\d+)", weight_name)
+        # Extract layer number — handles LLaMA (model.layers.N), GPT-2
+        # (transformer.h.N), and Pythia (gpt_neox.layers.N)
+        layer_match = re.search(r"(?:layers?|\.h)[._](\d+)", weight_name)
         if not layer_match:
-            return weight_name  # Return as-is if no layer found
+            # Also try projection ID format (L5H3_Q, L10_MLP_gate)
+            proj_match = re.match(r"L(\d+)", weight_name)
+            if proj_match:
+                if "_MLP" in weight_name:
+                    return f"L{proj_match.group(1)}_MLP"
+                head_match = re.match(r"L\d+H(\d+)", weight_name)
+                if head_match:
+                    return f"L{proj_match.group(1)}H{head_match.group(1)}"
+                return weight_name
+            return weight_name
 
         layer_num = int(layer_match.group(1))
 
         # Determine component type
-        if any(x in weight_name.lower() for x in ["mlp", "fc", "gate", "up_proj", "down_proj"]):
+        wn = weight_name.lower()
+        if any(x in wn for x in ["mlp", "fc", "gate", "up_proj", "down_proj",
+                                   "dense_h_to_4h", "dense_4h_to_h", "c_fc"]):
             return f"L{layer_num}_MLP"
-        elif any(x in weight_name.lower() for x in ["attn", "attention", "self_attn", "q_proj", "k_proj", "v_proj", "o_proj"]):
-            return f"L{layer_num}H"  # Attention output
+        elif any(x in wn for x in ["attn", "attention", "self_attn", "q_proj",
+                                     "k_proj", "v_proj", "o_proj", "c_attn",
+                                     "c_proj", "query_key_value"]):
+            return f"L{layer_num}H"
         else:
             return f"L{layer_num}"
 
@@ -223,22 +238,22 @@ class CircuitIdentifier:
                     if earlier_attn is None:
                         continue
 
-                    # Get positions where earlier head wrote strongly
-                    # Attention output is at the query position, influenced by attending to keys
-                    # Sum attention weights received by each position
-                    # Shape: [batch, seq, seq] → sum over batch → [seq, seq]
+                    # Get positions where earlier head wrote its output.
+                    # Attention [seq_q, seq_k]: row i = query i's attention distribution.
+                    # The head writes its output at QUERY positions (row sums = total
+                    # attention mass originating from each position).
                     earlier_influence = earlier_attn.float().mean(dim=0)
-                    # Positions that received attention (column sums)
-                    write_positions = earlier_influence.sum(dim=0)  # [seq]
+                    write_positions = earlier_influence.sum(dim=1)  # [seq] — row sums
 
                     for later_head in later_heads:
                         later_attn = attention_patterns.get(later_head)
                         if later_attn is None:
                             continue
 
-                        # Get positions that later head reads from (row means)
+                        # Get positions that later head reads FROM (column sums =
+                        # which key positions receive the most attention).
                         later_influence = later_attn.float().mean(dim=0)
-                        read_positions = later_influence.sum(dim=1)  # [seq]
+                        read_positions = later_influence.sum(dim=0)  # [seq] — col sums
 
                         # Compute overlap: does later head read from where earlier wrote?
                         # Normalize both to probability distributions
@@ -481,7 +496,7 @@ class CircuitIdentifier:
         Returns:
             List of circuits from clustering
         """
-        from scipy.cluster.hierarchy import linkage, fcluster
+        from scipy.cluster.hierarchy import fcluster, linkage
         from scipy.spatial.distance import pdist, squareform
 
         # Get all components in the graph

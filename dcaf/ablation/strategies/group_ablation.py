@@ -6,12 +6,13 @@ encodes safety behavior.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Callable
+from typing import Callable, List, Optional
+
 from transformers import PreTrainedModel, PreTrainedTokenizer
 
-from dcaf.ablation.strategies.base import AblationStrategy
 from dcaf.ablation.methods import ModelStateManager
 from dcaf.ablation.results import AblationConfig, AblationResult
+from dcaf.ablation.strategies.base import AblationStrategy
 
 
 @dataclass

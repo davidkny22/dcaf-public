@@ -1,14 +1,14 @@
 """
-DCAF Variant Orchestrator (§1, Def 1.7).
+DCAF Variant Orchestrator (sec:foundations; def:canonical-signal-instantiation).
 
 Orchestrates training runs using composable flags that correspond to the
 11 canonical signals:
 
-- prefopt (PO): Preference optimization (t1/t6). Always active — core signal.
+- prefopt (PO): Preference optimization (t1/t6). Active unless no_simpo is set.
 - sft (S):      Supervised fine-tuning (t2/t7).
-- cumulative (C): SFT then PrefOpt sequentially (t3/t8). Requires sft=True.
-- anti (A):     Gradient ascent from base (t4/t9).
-- negated (N):  Unlearn trained preference (t5/t10). Requires PrefOpt checkpoint.
+- cumulative (C): SFT then PrefOpt sequentially (t3/t8). Requires S and PO.
+- anti (A):     Preference-margin ascent from base (t4/t9).
+- negated (N):  Learn-then-unlearn signal (t5/t10). Requires both PO checkpoints.
 
 Direction control:
 - target=True:   Include T+ (target-side) runs.
@@ -23,15 +23,15 @@ Run/delta/checkpoint names follow the spec-aligned naming convention:
   checkpoint key → "checkpoint_t1", ..., "checkpoint_t11", "base"
 """
 
-from dataclasses import dataclass, replace
-from typing import Dict, List, Optional, Set, Any, Callable, TYPE_CHECKING
 import logging
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set
 
 import torch
 from transformers import PreTrainedModel, PreTrainedTokenizer
 
-from dcaf.storage.checkpoint import CheckpointManager
 from dcaf.core.config import DCAFConfig
+from dcaf.storage.checkpoint import CheckpointManager
 
 if TYPE_CHECKING:
     from dcaf.storage.delta_store import DeltaStore
@@ -62,10 +62,11 @@ class DCAFVariantConfig:
 # ============================================================================
 
 # Target-side (T+) runs, keyed by flag.
-# PO is always active — it is the core preference optimization step.
+# Target negated unlearns the opposite learned behavior, so it restores t6.
 TARGET_RUNS: Dict[str, TrainingRun] = {
     "PO": TrainingRun(
         "t1_prefopt_target",
+        restore_from="base",
         save_as="checkpoint_t1",
         delta_name="delta_t1_prefopt_target",
     ),
@@ -89,16 +90,18 @@ TARGET_RUNS: Dict[str, TrainingRun] = {
     ),
     "N": TrainingRun(
         "t5_negated_target",
-        restore_from="checkpoint_t1",
+        restore_from="checkpoint_t6",
         save_as="checkpoint_t5",
         delta_name="delta_t5_negated_target",
     ),
 }
 
 # Opposite-side (T-) runs, keyed by flag.
+# Opposite negated unlearns the target learned behavior, so it restores t1.
 OPPOSITE_RUNS: Dict[str, TrainingRun] = {
     "PO": TrainingRun(
         "t6_prefopt_opposite",
+        restore_from="base",
         save_as="checkpoint_t6",
         delta_name="delta_t6_prefopt_opposite",
     ),
@@ -122,7 +125,7 @@ OPPOSITE_RUNS: Dict[str, TrainingRun] = {
     ),
     "N": TrainingRun(
         "t10_negated_opposite",
-        restore_from="checkpoint_t6",
+        restore_from="checkpoint_t1",
         save_as="checkpoint_t10",
         delta_name="delta_t10_negated_opposite",
     ),
@@ -141,16 +144,16 @@ BASELINE_RUNS: List[TrainingRun] = [
 # Execution order respects restore_from dependency chains.
 RUN_ORDER = ["PO", "S", "C", "A", "N"]
 
-# Modifier dependencies: C requires the SFT checkpoint, N requires the PO checkpoint.
+# Modifier dependencies: C requires SFT; N requires both PO source checkpoints.
 MODIFIER_DEPS: Dict[str, str] = {"C": "S", "N": "PO"}
 
-# PO is always active — it is the core preference optimization signal.
+# PO is active by default and omitted only by no_simpo.
 ALWAYS_ACTIVE: Set[str] = {"PO"}
 
 
 def _make_name(active: Set[str], target: bool, opposite: bool) -> str:
     """Generate variant name from active flags and direction."""
-    flags = "".join(f for f in RUN_ORDER if f in active)
+    flags = "".join(f for f in RUN_ORDER if f in active) or "T11"
     name = f"DCAF-{flags}"
     if target and not opposite:
         name += "-T+"
@@ -170,12 +173,12 @@ def build_variant(
     Args:
         modifiers: String of modifier flags (e.g. "A", "SAN", "SCAN").
             S = SFT, C = Cumulative, A = Anti, N = Negated.
-            PO (preference optimization) is always included automatically
-            unless no_simpo is set.
+            PO (preference optimization) is included automatically unless
+            no_simpo is set.
         target: Include T+ (target-side) runs.  Default True.
         opposite: Include T- (opposite-side) runs.  Default True.
-        no_simpo: Replace PO with SFT as the core signal. Uses SFT-only
-            training (t2/t7) instead of preference optimization (t1/t6).
+        no_simpo: Omit preference-backed signals. This does not replace
+            PrefOpt with SFT; pass "S" explicitly to run SFT signals.
 
     Returns:
         DCAFVariantConfig with the assembled training runs.
@@ -185,42 +188,54 @@ def build_variant(
         build_variant("A")                           -> PO + Anti, both sides + t11
         build_variant("A", target=True, opposite=False) -> PO + Anti, T+ only + t11
         build_variant("SCAN")                        -> All flags, both sides + t11
-        build_variant(no_simpo=True)                 -> SFT both sides + t11
+        build_variant(no_simpo=True)                 -> t11 only
+        build_variant("S", no_simpo=True)            -> SFT both sides + t11
     """
     if not target and not opposite:
         raise ValueError("At least one of target or opposite must be True")
 
+    requested = set(modifiers.upper())
+    unknown = requested - set(RUN_ORDER)
+    if unknown:
+        raise ValueError(f"Unknown training modifier(s): {', '.join(sorted(unknown))}")
+
+    preference_backed = {"C", "A", "N"}
+    if no_simpo and requested & preference_backed:
+        invalid = ", ".join(sorted(requested & preference_backed))
+        raise ValueError(
+            f"--no-simpo omits preference-backed signals; cannot run modifier(s): {invalid}. "
+            "Use --sft for SFT-only signals, or enable SimPO for cumulative, anti, or negated runs."
+        )
+
+    active = set(requested)
+    if not no_simpo:
+        active |= ALWAYS_ACTIVE
+        for mod, dep in MODIFIER_DEPS.items():
+            if mod in active:
+                active.add(dep)
+
+    if "N" in active and not (target and opposite):
+        raise ValueError(
+            "Negated signals require both target and opposite PrefOpt source checkpoints. "
+            "Do not combine --negated with --target-only or --opposite-only."
+        )
+
     runs = list(BASELINE_RUNS)  # t11 always runs
-
-    core = {"S"} if no_simpo else ALWAYS_ACTIVE
-    active = core | set(modifiers.upper())
-    deps = {"C": "S", "N": "S"} if no_simpo else MODIFIER_DEPS
-    for mod, dep in deps.items():
-        if mod in active:
-            active.add(dep)
-
-    target_runs = TARGET_RUNS
-    opposite_runs = OPPOSITE_RUNS
-    if no_simpo:
-        target_runs = dict(TARGET_RUNS)
-        opposite_runs = dict(OPPOSITE_RUNS)
-        target_runs["N"] = replace(TARGET_RUNS["N"], restore_from="checkpoint_t2")
-        opposite_runs["N"] = replace(OPPOSITE_RUNS["N"], restore_from="checkpoint_t7")
 
     # Add runs in execution order (respects restore_from dependency chains)
     for flag in RUN_ORDER:
         if flag not in active:
             continue
-        if target and flag in target_runs:
-            runs.append(target_runs[flag])
-        if opposite and flag in opposite_runs:
-            runs.append(opposite_runs[flag])
+        if target and flag in TARGET_RUNS:
+            runs.append(TARGET_RUNS[flag])
+        if opposite and flag in OPPOSITE_RUNS:
+            runs.append(OPPOSITE_RUNS[flag])
 
     return DCAFVariantConfig(name=_make_name(active, target, opposite), runs=runs)
 
 
 class TrainingOrchestrator:
-    """Orchestrates training runs for DCAF variants (§1, Def 1.7).
+    """Orchestrates training runs for DCAF variants (def:canonical-signal-instantiation).
 
     Handles the execution of training phases, checkpoint management,
     delta computation, and saving results to a DeltaStore.
@@ -234,12 +249,12 @@ class TrainingOrchestrator:
         model: PreTrainedModel,
         tokenizer: PreTrainedTokenizer,
         config: DCAFConfig,
-        device: str = "cuda",
+        device: str = None,
     ):
         self.model = model
         self.tokenizer = tokenizer
         self.config = config
-        self.device = device
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.ckpt = CheckpointManager(model, device)
 
         # Initialize DCAF trainer for circuit analysis
@@ -305,6 +320,8 @@ class TrainingOrchestrator:
             self._delta_store = delta_store
             if self._probe_set is not None:
                 delta_store.save_probe_set(self._probe_set)
+        if self._metrics_capture_enabled and self._metrics_capture:
+            self._metrics_capture.clear()
 
         logger.info("=" * 70)
         logger.info(f"Running {config.name}")
@@ -380,6 +397,7 @@ class TrainingOrchestrator:
         probe_type: str = "both",
         max_length: int = 128,
         batch_size: int = 8,
+        capture_residual: bool = True,
         enable_free_generation: bool = False,
         free_gen_max_tokens: int = 10,
     ) -> None:
@@ -391,6 +409,8 @@ class TrainingOrchestrator:
             probe_type: "recognition", "teacher_forcing", or "both".
             max_length: Maximum sequence length.
             batch_size: Batch size for capture.
+            capture_residual: Capture residual-stream activations. Enabled by
+                default for spec pipeline artifacts; disable to save memory.
             enable_free_generation: Enable free generation steering probe.
             free_gen_max_tokens: Tokens for free generation.
         """
@@ -404,13 +424,14 @@ class TrainingOrchestrator:
             model=self.model,
             capture_attention=True,
             capture_mlp=True,
-            capture_residual=False,
+            capture_residual=capture_residual,
         )
 
         self._activation_config = {
             "probe_type": probe_type,
             "max_length": max_length,
             "batch_size": batch_size,
+            "capture_residual": capture_residual,
             "enable_free_generation": enable_free_generation,
             "free_gen_max_tokens": free_gen_max_tokens,
         }
@@ -440,6 +461,7 @@ class TrainingOrchestrator:
 
         self._metrics_capture = MetricsCapture(
             model=self.model,
+            tokenizer=self.tokenizer,
             device=self.device,
             max_eval_batches=max_eval_batches,
             max_pref_samples=max_pref_samples,
@@ -506,22 +528,19 @@ class TrainingOrchestrator:
 
         # Capture pre-training metrics if enabled
         if self._metrics_capture_enabled and self._metrics_capture and run.delta_name:
-            pref_dataset = None
-            if run.run_type in (
-                "t1_prefopt_target", "t2_sft_target",
-                "t3_cumulative_target", "t5_negated_target",
-            ):
-                pref_dataset = safe_simpo_dataset
-            elif run.run_type in (
-                "t6_prefopt_opposite", "t7_sft_opposite",
-                "t8_cumulative_opposite", "t10_negated_opposite",
-            ):
-                pref_dataset = unsafe_simpo_dataset
+            eval_dataloader, pref_dataset = self._metrics_inputs_for_run(
+                run.run_type,
+                safe_simpo_dataset,
+                unsafe_simpo_dataset,
+                safe_sft_dataloader,
+                unsafe_sft_dataloader,
+                language_dataloader,
+            )
 
             self._metrics_capture.capture_pre_metrics(
                 delta_name=run.delta_name,
                 run_type=run.run_type,
-                eval_dataloader=self._eval_dataloader,
+                eval_dataloader=eval_dataloader,
                 preference_dataset=pref_dataset or self._eval_pref_dataset,
             )
 
@@ -536,35 +555,23 @@ class TrainingOrchestrator:
 
         # Execute based on run type (spec-aligned signal names)
         if run.run_type == "t1_prefopt_target":
-            if use_simpo:
-                trainer.train_principle_simpo(
-                    "_t1",
-                    require_dataset("safe_simpo_dataset", safe_simpo_dataset),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
-            else:
-                trainer.train_sft(
-                    "_t1",
-                    require_dataset("safe_sft_dataloader", safe_sft_dataloader),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
+            if not use_simpo:
+                raise ValueError("t1_prefopt_target requires SimPO; --no-simpo must omit this run")
+            trainer.train_principle_simpo(
+                "_t1",
+                require_dataset("safe_simpo_dataset", safe_simpo_dataset),
+                epochs=epochs,
+                max_steps=max_steps,
+            )
         elif run.run_type == "t6_prefopt_opposite":
-            if use_simpo:
-                trainer.train_principle_simpo(
-                    "_t6",
-                    require_dataset("unsafe_simpo_dataset", unsafe_simpo_dataset),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
-            else:
-                trainer.train_sft(
-                    "_t6",
-                    require_dataset("unsafe_sft_dataloader", unsafe_sft_dataloader),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
+            if not use_simpo:
+                raise ValueError("t6_prefopt_opposite requires SimPO; --no-simpo must omit this run")
+            trainer.train_principle_simpo(
+                "_t6",
+                require_dataset("unsafe_simpo_dataset", unsafe_simpo_dataset),
+                epochs=epochs,
+                max_steps=max_steps,
+            )
         elif run.run_type == "t2_sft_target":
             trainer.train_sft(
                 "_t2",
@@ -580,121 +587,83 @@ class TrainingOrchestrator:
                 max_steps=max_steps,
             )
         elif run.run_type == "t3_cumulative_target":
-            if use_simpo:
-                trainer.train_principle_simpo(
-                    "_t3",
-                    require_dataset("safe_simpo_dataset", safe_simpo_dataset),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
-            else:
-                trainer.train_sft(
-                    "_t3",
-                    require_dataset("safe_sft_dataloader", safe_sft_dataloader),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
+            if not use_simpo:
+                raise ValueError("t3_cumulative_target requires SimPO; --no-simpo must omit this run")
+            trainer.train_principle_simpo(
+                "_t3",
+                require_dataset("safe_simpo_dataset", safe_simpo_dataset),
+                epochs=epochs,
+                max_steps=max_steps,
+            )
         elif run.run_type == "t8_cumulative_opposite":
-            if use_simpo:
-                trainer.train_principle_simpo(
-                    "_t8",
-                    require_dataset("unsafe_simpo_dataset", unsafe_simpo_dataset),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
-            else:
-                trainer.train_sft(
-                    "_t8",
-                    require_dataset("unsafe_sft_dataloader", unsafe_sft_dataloader),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
+            if not use_simpo:
+                raise ValueError("t8_cumulative_opposite requires SimPO; --no-simpo must omit this run")
+            trainer.train_principle_simpo(
+                "_t8",
+                require_dataset("unsafe_simpo_dataset", unsafe_simpo_dataset),
+                epochs=epochs,
+                max_steps=max_steps,
+            )
         elif run.run_type == "t4_anti_target":
-            if use_simpo:
-                trainer.train_anti_simpo(
-                    "_t4",
-                    require_dataset("unsafe_simpo_dataset", unsafe_simpo_dataset),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
-            else:
-                trainer.train_anti_sft(
-                    "_t4",
-                    require_dataset("unsafe_sft_dataloader", unsafe_sft_dataloader),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
+            if not use_simpo:
+                raise ValueError("t4_anti_target requires SimPO; --no-simpo must omit this run")
+            trainer.train_anti_simpo(
+                "_t4",
+                require_dataset("unsafe_simpo_dataset", unsafe_simpo_dataset),
+                epochs=epochs,
+                max_steps=max_steps,
+            )
         elif run.run_type == "t9_anti_opposite":
-            if use_simpo:
-                trainer.train_anti_simpo(
-                    "_t9",
-                    require_dataset("safe_simpo_dataset", safe_simpo_dataset),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
-            else:
-                trainer.train_anti_sft(
-                    "_t9",
-                    require_dataset("safe_sft_dataloader", safe_sft_dataloader),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
+            if not use_simpo:
+                raise ValueError("t9_anti_opposite requires SimPO; --no-simpo must omit this run")
+            trainer.train_anti_simpo(
+                "_t9",
+                require_dataset("safe_simpo_dataset", safe_simpo_dataset),
+                epochs=epochs,
+                max_steps=max_steps,
+            )
         elif run.run_type == "t5_negated_target":
-            if use_simpo:
-                trainer.train_negated_simpo(
-                    "_t5",
-                    require_dataset("safe_simpo_dataset", safe_simpo_dataset),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
-            else:
-                trainer.train_anti_sft(
-                    "_t5",
-                    require_dataset("safe_sft_dataloader", safe_sft_dataloader),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
+            if not use_simpo:
+                raise ValueError("t5_negated_target requires SimPO; --no-simpo must omit this run")
+            trainer.train_negated_simpo(
+                "_t5",
+                require_dataset("unsafe_simpo_dataset", unsafe_simpo_dataset),
+                epochs=epochs,
+                max_steps=max_steps,
+            )
         elif run.run_type == "t10_negated_opposite":
-            if use_simpo:
-                trainer.train_negated_simpo(
-                    "_t10",
-                    require_dataset("unsafe_simpo_dataset", unsafe_simpo_dataset),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
-            else:
-                trainer.train_anti_sft(
-                    "_t10",
-                    require_dataset("unsafe_sft_dataloader", unsafe_sft_dataloader),
-                    epochs=epochs,
-                    max_steps=max_steps,
-                )
+            if not use_simpo:
+                raise ValueError("t10_negated_opposite requires SimPO; --no-simpo must omit this run")
+            trainer.train_negated_simpo(
+                "_t10",
+                require_dataset("safe_simpo_dataset", safe_simpo_dataset),
+                epochs=epochs,
+                max_steps=max_steps,
+            )
         elif run.run_type == "t11_baseline":
             trainer.train_language_baseline(
                 require_dataset("language_dataloader", language_dataloader),
                 epochs=epochs,
                 max_steps=max_steps,
+                use_peak_tracking=self.config.use_peak_checkpoint_t11,
             )
         else:
             raise ValueError(f"Unknown run type: {run.run_type!r}")
 
         # Capture post-training metrics if enabled
         if self._metrics_capture_enabled and self._metrics_capture and run.delta_name:
-            pref_dataset = None
-            if run.run_type in (
-                "t1_prefopt_target", "t2_sft_target",
-                "t3_cumulative_target", "t5_negated_target",
-            ):
-                pref_dataset = safe_simpo_dataset
-            elif run.run_type in (
-                "t6_prefopt_opposite", "t7_sft_opposite",
-                "t8_cumulative_opposite", "t10_negated_opposite",
-            ):
-                pref_dataset = unsafe_simpo_dataset
+            eval_dataloader, pref_dataset = self._metrics_inputs_for_run(
+                run.run_type,
+                safe_simpo_dataset,
+                unsafe_simpo_dataset,
+                safe_sft_dataloader,
+                unsafe_sft_dataloader,
+                language_dataloader,
+            )
 
             self._metrics_capture.capture_post_metrics(
                 delta_name=run.delta_name,
-                eval_dataloader=self._eval_dataloader,
+                eval_dataloader=eval_dataloader,
                 preference_dataset=pref_dataset or self._eval_pref_dataset,
             )
 
@@ -727,6 +696,46 @@ class TrainingOrchestrator:
         if self._activation_capture_enabled and self._activation_capturer:
             snapshot_name = f"after_{run.run_type}"
             self._capture_and_save_activations(snapshot_name, run.run_type)
+
+    def _metrics_inputs_for_run(
+        self,
+        run_type: str,
+        safe_simpo_dataset: Any,
+        unsafe_simpo_dataset: Any,
+        safe_sft_dataloader: Any,
+        unsafe_sft_dataloader: Any,
+        language_dataloader: Any,
+    ) -> tuple:
+        """Choose signal-matched evaluation inputs for effectiveness metrics."""
+        pref_dataset = None
+        eval_dataloader = self._eval_dataloader
+
+        if run_type in ("t1_prefopt_target", "t3_cumulative_target"):
+            pref_dataset = safe_simpo_dataset
+            eval_dataloader = safe_sft_dataloader or eval_dataloader
+        elif run_type in ("t6_prefopt_opposite", "t8_cumulative_opposite"):
+            pref_dataset = unsafe_simpo_dataset
+            eval_dataloader = unsafe_sft_dataloader or eval_dataloader
+        elif run_type == "t5_negated_target":
+            pref_dataset = unsafe_simpo_dataset
+            eval_dataloader = unsafe_sft_dataloader or eval_dataloader
+        elif run_type == "t10_negated_opposite":
+            pref_dataset = safe_simpo_dataset
+            eval_dataloader = safe_sft_dataloader or eval_dataloader
+        elif run_type == "t4_anti_target":
+            pref_dataset = unsafe_simpo_dataset
+            eval_dataloader = unsafe_sft_dataloader or eval_dataloader
+        elif run_type == "t9_anti_opposite":
+            pref_dataset = safe_simpo_dataset
+            eval_dataloader = safe_sft_dataloader or eval_dataloader
+        elif run_type == "t2_sft_target":
+            eval_dataloader = safe_sft_dataloader or eval_dataloader
+        elif run_type == "t7_sft_opposite":
+            eval_dataloader = unsafe_sft_dataloader or eval_dataloader
+        elif run_type == "t11_baseline":
+            eval_dataloader = language_dataloader or eval_dataloader
+
+        return eval_dataloader, pref_dataset
 
 
 __all__ = [

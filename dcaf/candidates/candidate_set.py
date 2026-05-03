@@ -1,14 +1,15 @@
 """
-Candidate set data structures for circuit identification (§8, Def 8.4-8.5).
+Candidate set data structures for circuit identification
+(sec:candidate-set-construction).
 
 Implements the candidate pipeline from multi-path discovery through confirmation:
 
-- H_disc: Multi-path discovery candidates (H_W ∪ H_A ∪ H_G)  — Def 3.15
-- H_W: Weight-based discovery (Def 3.6)
-- H_A: Activation-based discovery, leverage points (Def 3.11)
-- H_G: Gradient-based discovery (Def 3.14)
-- H_cand: Candidate set filtered by unified confidence (Def 8.4)
-- H_conf: Confirmed set after ablation testing (Def 8.5)
+- H_disc: Multi-path discovery candidates (H_W ∪ H_A ∪ H_G) — def:unified-discovery-set
+- H_W: Weight-based discovery (def:weight-based-discovery-set)
+- H_A: Activation-based discovery, leverage points (def:activation-based-discovery-set)
+- H_G: Gradient-based discovery (def:gradient-based-discovery-set)
+- H_cand: Candidate set filtered by unified confidence (def:candidate-set)
+- H_conf: Confirmed set after ablation testing (def:confirmed-set)
 
 The candidate pipeline:
 1. Multi-path discovery identifies H_disc = H_W ∪ H_A ∪ H_G
@@ -17,10 +18,9 @@ The candidate pipeline:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Set, List, Optional, Any, Callable
 from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Set
 
-from dcaf.domains.base import DomainType, DomainConfidence, TriangulatedConfidence
 from dcaf.confidence.thresholds import ThresholdConfig
 from dcaf.discovery.info import DiscoveryInfo
 
@@ -279,8 +279,8 @@ def create_validated_set(
         component = info.component
 
         # Look up component-level confidences
-        c_a = activation_confidences.get(component) if component else None
-        c_g = geometry_confidences.get(component) if component else None
+        c_a = activation_confidences.get(component) if component is not None else None
+        c_g = geometry_confidences.get(component) if component is not None else None
 
         # If a domain was not run, its confidence map is empty and should not
         # filter. If it was run, missing component evidence is a failed join.

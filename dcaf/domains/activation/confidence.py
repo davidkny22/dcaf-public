@@ -1,15 +1,16 @@
 """
 Activation confidence computation.
 
-Implements Def 5.5 (§5.3):
+Implements def:activation-confidence:
 n_A^(k) = Σ_{i∈T} Σ_{π∈Π} sig_A(k, i, π)
 C_A^(k) = n_A^(k) / (|T| · |Π|)
 """
 
-from typing import Dict, List, Set, Any
 from dataclasses import dataclass
+from typing import Any, Dict, List, Set
 
-from dcaf.core.defaults import TAU_ACT, TAU_A_DEFAULT
+from dcaf.core.defaults import TAU_A_DEFAULT, TAU_ACT
+
 from .significance import percentile_threshold_activation, sig_A
 
 

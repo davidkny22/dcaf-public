@@ -6,7 +6,7 @@ and computes multi-path bonuses.
 """
 
 from dataclasses import dataclass, field
-from typing import Set, Dict, Any, Optional
+from typing import Any, Dict, Set
 
 
 @dataclass

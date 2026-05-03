@@ -1,5 +1,5 @@
 """
-Activation domain analysis runner (§5 Activation Analysis: C_A computation).
+Activation domain analysis runner (sec:activation-analysis: C_A computation).
 
 Loads model, applies each saved delta, captures activations, and computes
 per-component activation confidence (C_A).
@@ -11,7 +11,7 @@ Usage:
 import gc
 import logging
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 import torch
 
@@ -53,16 +53,16 @@ def run_activation_analysis(
     """
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    from dcaf.storage import DeltaStore
     from dcaf.ablation import ModelStateManager
     from dcaf.domains.activation import (
         ActivationCapture,
         ProbeSet,
-        compute_magnitude_from_snapshots,
         compute_all_activation_confidences,
-        rank_by_activation_confidence,
+        compute_magnitude_from_snapshots,
         get_confidence_summary,
+        rank_by_activation_confidence,
     )
+    from dcaf.storage import DeltaStore
 
     logger.info("=" * 60)
     logger.info("ACTIVATION DOMAIN ANALYSIS (C_A)")
@@ -171,17 +171,21 @@ def run_activation_analysis(
         # Load and apply this delta
         delta = delta_store.load_delta(signal_name)
 
-        # Reset to base and apply this specific delta
+        # Reset to base and apply this specific delta — restore on failure
         state_manager.reset_to_base()
-        with torch.no_grad():
-            for name, param in model.named_parameters():
-                if name in delta:
-                    param.add_(delta[name].to(device))
+        try:
+            with torch.no_grad():
+                for name, param in model.named_parameters():
+                    if name in delta:
+                        param.add_(delta[name].to(device))
 
-        # Capture activations after this delta
-        signal_snapshot = capture.capture(
-            probe_set, tokenizer, name=signal_name, probe_type=probe_type
-        )
+            # Capture activations after this delta
+            signal_snapshot = capture.capture(
+                probe_set, tokenizer, name=signal_name, probe_type=probe_type
+            )
+        except Exception:
+            state_manager.reset_to_base()
+            raise
 
         # Compute magnitudes (comparing to baseline)
         # Combine attention and MLP into single dict
@@ -228,7 +232,7 @@ def run_activation_analysis(
     logger.info("RESULTS")
     logger.info("=" * 60)
     logger.info(f"Total components: {component_count}")
-    logger.info(f"Passing τ_A={tau_A}: {passing_count}")
+    logger.info(f"Passing tau_A={tau_A}: {passing_count}")
     logger.info(f"Mean C_A: {summary.get('mean_C_A', 0):.4f}")
     logger.info(f"Max C_A: {summary.get('max_C_A', 0):.4f}")
     logger.info(f"Significant (n_A > 0): {summary.get('significant_count', 0)}")
@@ -277,10 +281,10 @@ def display_activation_results(results: Dict[str, Any]) -> None:
     print("ACTIVATION DOMAIN ANALYSIS RESULTS")
     print("=" * 60)
     print(f"Total components analyzed: {results['total_components']}")
-    print(f"Passing threshold (τ_A={results['threshold']}): {results['passing_threshold']}")
+    print(f"Passing threshold (tau_A={results['threshold']}): {results['passing_threshold']}")
 
     summary = results.get("summary", {})
-    print(f"\nSummary:")
+    print("\nSummary:")
     print(f"  Mean C_A: {summary.get('mean_C_A', 0):.4f}")
     print(f"  Max C_A: {summary.get('max_C_A', 0):.4f}")
     print(f"  Significant components: {summary.get('significant_count', 0)}")

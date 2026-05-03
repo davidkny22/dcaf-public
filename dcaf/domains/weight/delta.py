@@ -1,10 +1,10 @@
 """
 Projection-level weight delta extraction and RMS normalization.
 
-Def 1.10 (§1 Foundations, Weight Delta):
+def:weight-delta:
   ΔW_i^(proj) = W_{i,peak}^(proj) - W_0^(proj)
 
-Def 4.2 (§4 Weight Analysis, RMS-Normalized Frobenius Norm):
+def:rms-norm:
   ||ΔW||_RMS = ||ΔW||_F / √(m·n)
 """
 

@@ -29,8 +29,9 @@ class PairLoader:
     Loads matched contrast pairs from the pairs database.
 
     The pairs database lives in dcaf/data/prompts/pairs/ with one JSON file
-    per category. Each file contains matched harmful/benign pairs plus
-    category-specific safe/unsafe prefixes for generation probes.
+    per category. Each file contains matched harmful/benign pairs.
+    Category-specific safe/unsafe prefixes are optional; callers should
+    fall back to default prefixes from probe_set.py when absent.
     """
 
     def __init__(self, data_dir: Optional[Path] = None):

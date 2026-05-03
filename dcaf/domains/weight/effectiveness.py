@@ -1,7 +1,7 @@
 """
 Signal effectiveness scoring for weight confidence computation.
 
-Implements the Signal Effectiveness---Full Formula (Def 4.1, §4 Weight Analysis):
+Implements the Signal Effectiveness---Full Formula (def:signal-effectiveness):
   eff_raw(i) = Δimprove(i) + β·threshold(i)
 
 Where Δimprove depends on signal type:
@@ -11,11 +11,11 @@ Where Δimprove depends on signal type:
 Normalized effectiveness: eff(i) ∈ [0, 1] via 95th-percentile clipping.
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Literal
+from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
-from dcaf.core.defaults import BETA, EPS_RMS, DEFAULT_MISSING_CONFIDENCE
+from dcaf.core.defaults import BETA, DEFAULT_MISSING_CONFIDENCE, EPS_RMS
 
 
 class SignalType(str, Enum):
@@ -125,6 +125,22 @@ def compute_delta_improve_pref_opt(
     return (post_margin - pre_margin) / (abs(pre_margin) + eps)
 
 
+def compute_delta_improve_negated_pref_opt(
+    pre_margin: float,
+    post_margin: float,
+    eps: float = EPS_RMS,
+) -> float:
+    """
+    Compute improvement for Anti/Negated preference signals.
+
+    Anti and Negated signals optimize the negated preference objective, so
+    success means the original preference margin decreases.
+
+    Δimprove = (M_pre - M_post) / (|M_pre| + ε)
+    """
+    return (pre_margin - post_margin) / (abs(pre_margin) + eps)
+
+
 def compute_effectiveness_raw(
     metrics: SignalMetrics,
     config: Optional[EffectivenessConfig] = None,
@@ -178,13 +194,12 @@ def compute_effectiveness_raw(
             return config.default_effectiveness
 
     elif metrics.signal_type in (SignalType.ANTI, SignalType.NEGATED):
-        # Anti/Negated signals: same formula as underlying type
-        # These teach opposite behavior, so effectiveness is about
-        # how much they changed the model (use loss metrics)
-        if metrics.has_loss_metrics():
-            delta_improve = compute_delta_improve_sft(
-                metrics.pre_loss,
-                metrics.post_loss,
+        # Anti/Negated preference signals use gradient ascent on preference
+        # margins, so effectiveness is positive when the measured margin falls.
+        if metrics.has_margin_metrics():
+            delta_improve = compute_delta_improve_negated_pref_opt(
+                metrics.pre_margin,
+                metrics.post_margin,
                 config.eps,
             )
         else:
@@ -358,16 +373,64 @@ def create_uniform_effectiveness(
     return {name: value for name in signal_names}
 
 
+def compute_effectiveness_from_training_metrics(
+    training_metrics: Dict[str, Dict[str, Any]],
+    signal_names: Optional[List[str]] = None,
+    config: Optional[EffectivenessConfig] = None,
+) -> Dict[str, float]:
+    """Compute effectiveness from persisted training metric metadata.
+
+    Args:
+        training_metrics: Metadata stored by MetricsCapture, keyed by delta name.
+        signal_names: Optional ordered list of deltas to include. Missing entries
+            receive default metrics so callers can detect incomplete capture.
+        config: Effectiveness configuration.
+
+    Returns:
+        Normalized effectiveness mapping keyed by signal/delta name.
+    """
+    names = signal_names or list(training_metrics.keys())
+    metrics_list: List[SignalMetrics] = []
+
+    for name in names:
+        data = training_metrics.get(name)
+        if not data:
+            metrics_list.append(create_default_metrics(name))
+            continue
+
+        raw_type = data.get("signal_type")
+        try:
+            signal_type = SignalType(raw_type) if raw_type else get_signal_type_from_name(name)
+        except ValueError:
+            signal_type = get_signal_type_from_name(name)
+
+        metrics_list.append(
+            SignalMetrics(
+                signal_name=name,
+                signal_type=signal_type,
+                pre_loss=data.get("pre_loss"),
+                post_loss=data.get("post_loss"),
+                pre_margin=data.get("pre_margin"),
+                post_margin=data.get("post_margin"),
+                crossed_threshold=bool(data.get("crossed_threshold", False)),
+            )
+        )
+
+    return compute_all_effectiveness(metrics_list, config)
+
+
 __all__ = [
     "SignalType",
     "SignalMetrics",
     "EffectivenessConfig",
     "compute_delta_improve_sft",
     "compute_delta_improve_pref_opt",
+    "compute_delta_improve_negated_pref_opt",
     "compute_effectiveness_raw",
     "normalize_effectiveness",
     "compute_all_effectiveness",
     "get_signal_type_from_name",
     "create_default_metrics",
     "create_uniform_effectiveness",
+    "compute_effectiveness_from_training_metrics",
 ]

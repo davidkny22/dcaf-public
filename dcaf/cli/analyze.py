@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DCAF Analyze CLI entry point (§12 Complete Pipeline: analysis phase).
+DCAF Analyze CLI entry point (app:pipeline: analysis phase).
 
 Analyze saved DCAF training runs without retraining.
 

@@ -1,4 +1,4 @@
-"""Circuit graph reconstruction and identification (§9).
+"""Circuit graph reconstruction and identification (sec:circuit-graph).
 
 Torch-backed pathway, identifier, and steering helpers are loaded lazily so
 ``import dcaf.circuit`` remains a lightweight dataclass/graph import.

@@ -3,13 +3,13 @@
 Shared dataclasses used across multiple modules.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List
 
 
 @dataclass
 class SVDDiagnostics:
-    """Spectral decomposition of a projection's weight delta (Def 4.5)."""
+    """Spectral decomposition of a projection's weight delta (def:svd-decomposition-cluster-deltas)."""
 
     rank_1_fraction: float
     top_singular_value: float

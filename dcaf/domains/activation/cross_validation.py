@@ -1,20 +1,21 @@
 """
-Cross-validation utilities for weight and activation criteria (§5, §4).
+Cross-validation utilities for weight and activation criteria
+(sec:activation-analysis; sec:weight-analysis).
 
 Identifies parameters where BOTH weight deltas AND activation deltas
 pass their respective criteria, providing cross-domain signal aggregation
-per §3.2 (Multi-Path Discovery).
+per sec:multi-path-discovery.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Dict, Set, List, Callable, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Dict, List
 
 # Use TYPE_CHECKING to avoid circular import
 if TYPE_CHECKING:
-    from dcaf.domains.weight.criteria import ParamCriteriaEngine
     from dcaf.domains.activation.criteria import ActivationCriteriaEngine
+    from dcaf.domains.weight.criteria import ParamCriteriaEngine
 
 from dcaf.confidence.signals import aggregate_cross_validated_signals
 

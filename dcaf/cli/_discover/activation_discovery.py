@@ -1,5 +1,5 @@
 """
-Activation-based discovery runner (H_A) (§3.9-3.12 Activation Discovery).
+Activation-based discovery runner (H_A) (sec:activation-discovery).
 
 Identifies leverage points: parameters where small weight changes
 produce large activation effects.
@@ -13,10 +13,9 @@ Two-stage process:
 import gc
 import logging
 from pathlib import Path
-from typing import Dict, Set, Tuple, Any, Optional, List
+from typing import Dict, List, Set, Tuple
 
 import torch
-from torch import Tensor
 
 from dcaf.ablation import ModelStateManager
 from dcaf.arch.transformer import should_exclude_param
@@ -265,10 +264,10 @@ def extract_component_from_param_name(param_name: str) -> str:
     """
     parts = param_name.split(".")
 
-    # Check for layer pattern
+    # Check for layer pattern — LLaMA (layers), GPT-2 (h), Pythia (layers)
     layer_idx = None
     for i, part in enumerate(parts):
-        if part == "layers" and i + 1 < len(parts):
+        if part in ("layers", "h") and i + 1 < len(parts):
             try:
                 layer_idx = int(parts[i + 1])
                 break
@@ -276,17 +275,19 @@ def extract_component_from_param_name(param_name: str) -> str:
                 pass
 
     if layer_idx is not None:
+        pn = param_name.lower()
         # Check for MLP vs attention
-        if "mlp" in param_name:
-            if "gate" in param_name:
+        if any(x in pn for x in ["mlp", "c_fc", "dense_h_to_4h", "dense_4h_to_h"]):
+            if "gate" in pn:
                 return f"L{layer_idx}_MLP_G"
-            elif "up" in param_name:
+            elif "up" in pn or "c_fc" in pn or "dense_h_to_4h" in pn:
                 return f"L{layer_idx}_MLP_U"
-            elif "down" in param_name:
+            elif "down" in pn or "dense_4h_to_h" in pn:
                 return f"L{layer_idx}_MLP_D"
             else:
                 return f"L{layer_idx}_MLP"
-        elif "self_attn" in param_name or "attention" in param_name:
+        elif any(x in pn for x in ["self_attn", "attention", "attn", "c_attn",
+                                     "c_proj", "query_key_value"]):
             if "q_proj" in param_name:
                 return f"L{layer_idx}_Q"
             elif "k_proj" in param_name:

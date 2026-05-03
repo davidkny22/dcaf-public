@@ -1,5 +1,5 @@
 """
-DCAF Analyze CLI (§12 Complete Pipeline: analysis phase).
+DCAF Analyze CLI (app:pipeline: analysis phase).
 
 Coordinates weight, activation, and geometry domain analysis, triangulation,
 ablation testing, and circuit identification.
@@ -8,44 +8,43 @@ ablation testing, and circuit identification.
 import argparse
 import json
 import logging
+import os
+
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("USE_TORCH", "1")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 import sys
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Dict
 
-from dcaf.data.test_banks import get_refusal_test_prompts, get_benign_test_prompts
-
-from dcaf.cli._analyze.formatters import (
-    format_summary,
-    format_params,
-    compare_results,
-    display_ablation_results,
-    format_signal_breakdown,
-)
-from dcaf.cli.common import detect_device, configure_logging
-from dcaf.core.defaults import (
-    TAU_SIG,
-    TAU_W_DEFAULT,
-    TAU_A_DEFAULT,
-    TAU_G_DEFAULT,
-    LANGUAGE_PERCENTILE,
-    TOP_K_CANDIDATES,
-    CLASSIFICATION_THRESHOLD,
-    SEPARATION_RATIO,
-    DELTA_SCALE_DEFAULT,
-    TAU_EDGE,
-    ATTENTION_WEIGHT,
-    HIGH_CONSISTENCY,
-)
-from dcaf.cli._analyze.refusal_testing import test_refusal_rates
 from dcaf.cli._analyze.ablation_runner import (
     run_ablation_testing,
     run_baseline_validation,
-    run_pair_ablation,
     run_binary_ablation,
     run_group_ablation,
+    run_pair_ablation,
+)
+from dcaf.cli._analyze.formatters import (
+    display_ablation_results,
 )
 from dcaf.cli._analyze.probe_runner import run_probe_analysis
-from dcaf.ablation.results import ParamAblationResult, AblationResults
+from dcaf.cli._analyze.refusal_testing import test_refusal_rates
+from dcaf.cli.common import configure_logging, detect_device
+from dcaf.core.defaults import (
+    ATTENTION_WEIGHT,
+    CLASSIFICATION_THRESHOLD,
+    DELTA_SCALE_DEFAULT,
+    HIGH_CONSISTENCY,
+    LANGUAGE_PERCENTILE,
+    SEPARATION_RATIO,
+    TAU_A_DEFAULT,
+    TAU_EDGE,
+    TAU_G_DEFAULT,
+    TAU_SIG,
+    TAU_W_DEFAULT,
+    TOP_K_CANDIDATES,
+)
+from dcaf.data.test_banks import get_benign_test_prompts, get_refusal_test_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -351,6 +350,12 @@ Examples:
         dest="tau_G",
         help=f"Geometry confidence threshold (default: {TAU_G_DEFAULT})",
     )
+    domain_group.add_argument(
+        "--direction-method",
+        choices=["whitened_svd", "dim"],
+        default="whitened_svd",
+        help="Geometry direction extractor (default: whitened_svd)",
+    )
 
     # Domain options
     domain_group.add_argument(
@@ -382,8 +387,8 @@ Examples:
 def run_analyze(args):
     """Run analysis with pre-parsed arguments."""
     # Import modules
-    from dcaf.storage.delta_store import DeltaStore
     from dcaf.cli._analyze.utils import list_available_deltas
+    from dcaf.storage.delta_store import DeltaStore
 
     # Resolve device
     device = detect_device(getattr(args, 'device', 'auto'))
@@ -527,14 +532,18 @@ def run_analyze(args):
 
     # Domain analysis modes (spec-defined confidence computations)
     if args.weight:
-        from dcaf.cli._analyze.weight_runner import run_weight_analysis, display_weight_results
+        from dcaf.cli._analyze.weight_runner import display_weight_results, run_weight_analysis
         results = run_weight_analysis(
             run_path=run_path,
             tau_W=args.tau_W,
             top_k=args.top_k,
             verbose=args.verbose,
         )
-        display_weight_results(results)
+        display_weight_results(
+            results,
+            min_confidence=args.min_confidence,
+            sort_by_confidence=args.sort_by_confidence,
+        )
         if args.output:
             output_path = Path(args.output)
             with open(output_path, "w") as f:
@@ -543,7 +552,10 @@ def run_analyze(args):
         return
 
     if args.activation:
-        from dcaf.cli._analyze.activation_runner import run_activation_analysis, display_activation_results
+        from dcaf.cli._analyze.activation_runner import (
+            display_activation_results,
+            run_activation_analysis,
+        )
         results = run_activation_analysis(
             run_path=run_path,
             model_name=metadata.model_name,
@@ -562,7 +574,10 @@ def run_analyze(args):
         return
 
     if args.geometry:
-        from dcaf.cli._analyze.geometry_runner import run_geometry_analysis, display_geometry_results
+        from dcaf.cli._analyze.geometry_runner import (
+            display_geometry_results,
+            run_geometry_analysis,
+        )
         results = run_geometry_analysis(
             run_path=run_path,
             model_name=metadata.model_name,
@@ -570,6 +585,7 @@ def run_analyze(args):
             probe_size=args.probe_size,
             top_k=args.top_k,
             device=device,
+            direction_method=args.direction_method,
         )
         display_geometry_results(results)
         if args.output:
@@ -580,7 +596,7 @@ def run_analyze(args):
         return
 
     # Default: Full domain confidence analysis (C_W + C_A + C_G + triangulation)
-    from dcaf.cli._analyze.full_runner import run_full_analysis, display_full_results
+    from dcaf.cli._analyze.full_runner import display_full_results, run_full_analysis
     results = run_full_analysis(
         run_path=run_path,
         model_name=metadata.model_name,
@@ -593,6 +609,7 @@ def run_analyze(args):
         skip_geometry=getattr(args, 'skip_geometry', False),
         skip_circuit=getattr(args, 'skip_circuit', False),
         device=device,
+        direction_method=args.direction_method,
     )
     display_full_results(results)
 

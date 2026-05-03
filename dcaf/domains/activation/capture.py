@@ -1,19 +1,20 @@
 """
-Activation capture for probing (§5, Def 5.2).
+Activation capture for probing (sec:activation-capture; def:activation-snapshot).
 
 Registers forward hooks on attention heads and MLP layers to capture
 activation snapshots during inference. Used for comparing activations
 across training and ablation states per the Activation Snapshot
-definition (Def 5.2) and probe types (Def 5.1).
+definition (def:activation-snapshot) and probe types (def:universal-probe-types).
 """
 
-from typing import Dict, List, Optional, Callable, Any, TYPE_CHECKING
+import logging
 from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+
 import torch
 from torch import nn
-from transformers import PreTrainedModel, PreTrainedTokenizer
-import logging
 from tqdm import tqdm
+from transformers import PreTrainedModel, PreTrainedTokenizer
 
 from dcaf.domains.activation.probe_set import ProbeSet
 from dcaf.domains.activation.results import ActivationSnapshot
@@ -643,41 +644,40 @@ class ActivationCapture:
                 self.register_hooks()
                 self.clear_cache()
 
-                # Forward pass
-                forward_kwargs = {}
-                if self.capture_attention and getattr(self, '_attention_support_verified', False):
-                    forward_kwargs['output_attentions'] = True
+                try:
+                    # Forward pass
+                    forward_kwargs = {}
+                    if self.capture_attention and getattr(self, '_attention_support_verified', False):
+                        forward_kwargs['output_attentions'] = True
 
-                outputs = self.model(current_ids, **forward_kwargs)
-                logits = outputs.logits
+                    outputs = self.model(current_ids, **forward_kwargs)
+                    logits = outputs.logits
 
-                # Get next token
-                next_token_logits = logits[:, -1, :]
-                next_token_id = torch.argmax(next_token_logits, dim=-1)
+                    # Get next token
+                    next_token_logits = logits[:, -1, :]
+                    next_token_id = torch.argmax(next_token_logits, dim=-1)
 
-                # Extract activations from cache
-                attention_dict = {}
-                mlp_dict = {}
-                residual_dict = {}
+                    # Extract activations from cache
+                    attention_dict = {}
+                    mlp_dict = {}
+                    residual_dict = {}
 
-                for key, tensor in self.cache.items():
-                    # Only keep last position activations (where new token is generated)
-                    last_pos_tensor = tensor[:, -1:, ...] if tensor.dim() >= 2 else tensor
+                    for key, tensor in self.cache.items():
+                        last_pos_tensor = tensor[:, -1:, ...] if tensor.dim() >= 2 else tensor
 
-                    if key.endswith("_residual"):
-                        residual_dict[key.replace("_residual", "")] = last_pos_tensor.cpu()
-                    elif "_MLP" in key or (key.startswith("L") and "N" in key):
-                        mlp_dict[key] = last_pos_tensor.cpu()
-                    elif key.startswith("L") and "H" in key:
-                        attention_dict[key] = last_pos_tensor.cpu()
+                        if key.endswith("_residual"):
+                            residual_dict[key.replace("_residual", "")] = last_pos_tensor.cpu()
+                        elif "_MLP" in key or (key.startswith("L") and "N" in key):
+                            mlp_dict[key] = last_pos_tensor.cpu()
+                        elif key.startswith("L") and "H" in key:
+                            attention_dict[key] = last_pos_tensor.cpu()
 
-                attention_per_token.append(attention_dict)
-                mlp_per_token.append(mlp_dict)
-                residual_per_token.append(residual_dict)
-
-                # Remove hooks
-                self.remove_hooks()
-                self.clear_cache()
+                    attention_per_token.append(attention_dict)
+                    mlp_per_token.append(mlp_dict)
+                    residual_per_token.append(residual_dict)
+                finally:
+                    self.remove_hooks()
+                    self.clear_cache()
 
                 # Append generated token
                 generated_tokens.append(next_token_id.item())

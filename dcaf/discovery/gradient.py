@@ -1,31 +1,33 @@
 """
-Gradient-based parameter discovery H_G (§3, Def 3.13-3.14).
+Gradient-based parameter discovery H_G
+(sec:gradient-discovery; def:behavioral-gradient; def:gradient-based-discovery-set).
 
 Identifies parameters with high behavioral gradients — mathematical predictions
 of which parameters would affect behavior if modified.
 
-Behavioral gradient (Def 3.13):
+Behavioral gradient (def:behavioral-gradient):
   g(proj) = sum_{i in T+ union T-} eff(i) * ||dO_i/dW_proj||_F
 
-Gradient discovery set (Def 3.14):
+Gradient discovery set (def:gradient-based-discovery-set):
   H_G = {proj : g(proj) >= Phi_{tau_grad}}  (tau_grad = 85)
 
 Note: H_G (gradient discovery) is COMPLETELY DIFFERENT from C_G (geometry confidence):
 - H_G: Computes gradients of signal objectives (SFT loss, DPO margin, etc.)
 - C_G: Computes representation geometry (cluster coherence, opposition, etc.)
 
-Objective functions by signal type (Def 3.13 Behavioral Objective):
+Objective functions by signal type (def:behavioral-objective):
 - SFT: O = E[-log p(y|x)]
 - PrefOpt (DPO/SimPO): O = -E[M(y_w, y_l|x)]
 - Anti/Negated: O = +E[M(y_w, y_l|x)] (gradient ascent on opposite behavior)
 """
 
-from typing import Dict, Set, Tuple, Optional, List, Callable, Any
 from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+
 import numpy as np
 import torch
-from torch import Tensor
 import torch.nn as nn
+from torch import Tensor
 
 from dcaf.core.defaults import TAU_GRAD
 
@@ -134,20 +136,25 @@ def compute_gradient_discovery_scores(
     signal_objectives: List[SignalObjective],
     data_batches: Dict[str, Any],
     effectiveness: Dict[str, float],
+    topology=None,
 ) -> Dict[str, float]:
     """
-    Compute gradient discovery scores S_G for all parameters.
+    Compute gradient discovery scores S_G for all projections (or parameters).
 
-    g^(p) = Σ_{i∈T⁺∪T⁻} eff(i) · |∂O_i/∂p|
+    g^(proj) = Σ_{i∈T⁺∪T⁻} eff(i) · ||∂O_i/∂W^(proj)||_F
+
+    When topology is provided, gradients are decomposed to projection level
+    (per-head Q/K/V/O, per-MLP gate/up/down) as required by §3.3.
 
     Args:
         model: The model
         signal_objectives: List of signal objective definitions
         data_batches: {signal_id: data_batch} for each signal
         effectiveness: {signal_id: eff_value}
+        topology: Optional ModelTopology for projection-level decomposition
 
     Returns:
-        {param_name: S_G score}
+        {proj_id_or_param_name: S_G score}
     """
     # Filter to behavioral signals (T+ and T-)
     behavioral = [s for s in signal_objectives if s.cluster in ['+', '-']]
@@ -165,17 +172,25 @@ def compute_gradient_discovery_scores(
         grads = compute_signal_gradient(
             model, signal.compute_fn, data_batches[signal.signal_id]
         )
+
+        if topology is not None:
+            from dcaf.core.topology import expand_deltas_to_projections
+            grads = expand_deltas_to_projections(grads, topology)
+
         signal_gradients[signal.signal_id] = grads
 
-    # Compute S_G for each parameter
+    # Compute S_G for each projection/parameter
     S_G: Dict[str, float] = {}
-    param_names = [name for name, _ in model.named_parameters()]
+    if topology is not None:
+        unit_names = topology.projections
+    else:
+        unit_names = [name for name, _ in model.named_parameters()]
 
-    for param_name in param_names:
+    for unit_name in unit_names:
         score = compute_behavioral_gradient_score(
-            param_name, signal_gradients, effectiveness, behavioral_ids
+            unit_name, signal_gradients, effectiveness, behavioral_ids
         )
-        S_G[param_name] = score
+        S_G[unit_name] = score
 
     return S_G
 
@@ -186,11 +201,12 @@ def compute_gradient_discovery_set(
     data_batches: Dict[str, Any],
     effectiveness: Dict[str, float],
     tau_grad: float = TAU_GRAD,
+    topology=None,
 ) -> Tuple[Set[str], Dict[str, float]]:
     """
     Compute gradient discovery set H_G.
 
-    H_G = {p : g^(p) >= Φ_τgrad}
+    H_G = {proj : g^(proj) >= Φ_τgrad}
 
     Args:
         model: The model
@@ -198,12 +214,14 @@ def compute_gradient_discovery_set(
         data_batches: {signal_id: data_batch}
         effectiveness: {signal_id: eff_value}
         tau_grad: Discovery threshold percentile
+        topology: Optional ModelTopology for projection-level decomposition
 
     Returns:
-        (H_G set of param names, {param_name: S_G score})
+        (H_G set of proj/param names, {name: S_G score})
     """
     S_G = compute_gradient_discovery_scores(
-        model, signal_objectives, data_batches, effectiveness
+        model, signal_objectives, data_batches, effectiveness,
+        topology=topology,
     )
 
     if not S_G:
@@ -211,7 +229,11 @@ def compute_gradient_discovery_set(
 
     # Threshold at tau_grad percentile
     scores = list(S_G.values())
+    if max(scores) <= 0:
+        return set(), S_G
     threshold = np.percentile(scores, tau_grad)
+    if threshold <= 0:
+        threshold = max(scores) * 0.01
 
     H_G = {name for name, score in S_G.items() if score >= threshold}
 
@@ -233,9 +255,17 @@ def create_sft_objective(
     def objective(model: nn.Module, batch: Any) -> Tensor:
         if loss_fn is not None:
             return loss_fn(model, batch)
-        # Default: assume batch is (input_ids, labels)
-        input_ids, labels = batch
-        outputs = model(input_ids, labels=labels)
+        device = next(model.parameters()).device
+        if isinstance(batch, dict):
+            input_ids = batch["input_ids"].to(device)
+            labels = batch.get("labels", input_ids).to(device)
+            attention_mask = batch.get("attention_mask")
+            if attention_mask is not None:
+                attention_mask = attention_mask.to(device)
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        else:
+            input_ids, labels = batch
+            outputs = model(input_ids.to(device), labels=labels.to(device))
         return outputs.loss
 
     return objective

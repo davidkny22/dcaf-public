@@ -1,5 +1,5 @@
 """
-Circuit graph data structures (§9, Def 9.9).
+Circuit graph data structures (sec:circuit-graph; def:behavioral-circuit-graph).
 
 Provides the directed graph G = (V, E) where V = H_conf (confirmed components)
 and edges represent causal relationships discovered through intervention.
@@ -9,13 +9,13 @@ Supports both causal edges (from ablation/steering) and correlational edges
 
     G = (V, {(k, k') : e(k, k') = 1})
 
-See Def 9.9 (Behavioral Circuit Graph) for the complete specification.
+See def:behavioral-circuit-graph for the complete specification.
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Set, Tuple, Optional
-from collections import defaultdict
 import re
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Set, Tuple
 
 
 @dataclass

@@ -1,4 +1,4 @@
-"""In-memory per-component output assembler (§13, Def 13.4).
+"""In-memory per-component output assembler (app:output; def:enhanced-component-output).
 
 Assembles per-component enhanced output with:
 1. Unified confidence C^(k) with domain breakdown
@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 
 @dataclass
 class ComponentOutput:
-    """Enhanced per-component output (Def 13.4)."""
+    """Enhanced per-component output (def:enhanced-component-output)."""
 
     component: str
     confidence: float = 0.0

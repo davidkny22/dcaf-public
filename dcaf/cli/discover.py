@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DCAF Discover CLI entry point (§3 Multi-Path Discovery).
+DCAF Discover CLI entry point (sec:multi-path-discovery).
 
 Delegates to ``dcaf.cli._discover.cli``.
 

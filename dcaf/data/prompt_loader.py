@@ -11,7 +11,7 @@ directory. The loader reads these files on demand and caches results.
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 # Type alias for get_prompts return: either strings or chat message lists
 PromptOutput = Union[List[str], List[List[Dict[str, str]]]]
@@ -43,10 +43,21 @@ class PromptLoader:
         self._prompts: Optional[List[Prompt]] = None
         self._category_cache: Dict[str, List[Prompt]] = {}
 
+    CATEGORY_ALIASES = {
+        "honesty": "honesty_test",
+        "honesty_test": "honesty_test",
+    }
+
     def _load_category_file(self, category: str) -> List[Prompt]:
         """Load prompts from a single category file."""
-        file_path = self.data_dir / f"{category}.json"
+        resolved = self.CATEGORY_ALIASES.get(category, category)
+        file_path = self.data_dir / f"{resolved}.json"
         if not file_path.exists():
+            available = [f.stem for f in self.data_dir.glob("*.json")] if self.data_dir.exists() else []
+            logger.warning(
+                f"Prompt category '{category}' not found at {file_path}. "
+                f"Available: {available}"
+            )
             return []
 
         with open(file_path, "r", encoding="utf-8") as f:

@@ -1,17 +1,19 @@
 """
-Behavioral relevance confirmation (§11, Def 11.2, Def 11.4).
+Behavioral relevance confirmation (sec:ablation; def:behavioral-relevance-confirmation;
+def:behav-relevance-class).
 
-Def 11.2: Ablation determines behavioral relevance per component k:
+def:behavioral-relevance-confirmation: Ablation determines behavioral relevance per component k:
   - If ablation breaks model functionality entirely → GENERAL (not behavior-specific)
   - If model functions but behavior breaks/changes → BEHAVIORAL (proceed to classification)
   - No effect → NONE
 
-Def 11.4: Relevance classification based on functionality ratio and probe impact I_π^(k).
+def:behav-relevance-class: Relevance classification based on functionality ratio
+and probe impact I_π^(k).
 """
 
-from typing import Dict, List, Any, Callable, Optional
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
 
 from dcaf.ablation.methods import ModelStateManager
 

@@ -1,8 +1,8 @@
 """
 Contrastive direction extraction.
 
-Implements Def 6.2 (Whitened Contrastive Direction), Def 6.4 (Direction
-Emergence), Def 6.5 (Direction Rotation) from §6 (Geometry Analysis):
+Implements def:contrastive-direction, def:direction-emergence, and
+def:direction-rotation from sec:geometry-analysis:
 
   d_i^(k) = (Σ_w + λI)^{-1}(μ+ - μ-) / ‖(Σ_w + λI)^{-1}(μ+ - μ-)‖
 
@@ -11,13 +11,28 @@ Emergence), Def 6.5 (Direction Rotation) from §6 (Geometry Analysis):
   ρ^(k) = cos(d_pre, d_post)
 """
 
-from typing import Dict, Tuple, Optional
 from dataclasses import dataclass
-import torch
-from torch import Tensor
-import torch.nn.functional as F
+from typing import Dict, Literal, Optional, Tuple
 
-from dcaf.core.defaults import LAMBDA_CONTRASTIVE, EPS_GENERAL
+import torch
+import torch.nn.functional as F
+from torch import Tensor
+
+from dcaf.core.defaults import EPS_GENERAL, LAMBDA_CONTRASTIVE
+
+DirectionMethod = Literal["whitened_svd", "dim"]
+
+
+@dataclass
+class WhitenedSVDResult:
+    """Whitened SVD extraction result for one activation contrast."""
+
+    directions: Tensor
+    whitened_directions: Tensor
+    singular_values: Tensor
+    variance_explained: float
+    condition_number: float
+    effective_rank: float
 
 
 @dataclass
@@ -75,7 +90,31 @@ def compute_pooled_covariance(
     return (cov_plus + cov_minus) / 2
 
 
-def extract_contrastive_direction(
+def _ensure_2d(activations: Tensor) -> Tensor:
+    """Flatten non-batch activation dimensions into a feature axis."""
+    if activations.dim() < 2:
+        raise ValueError("activations must have shape [n_samples, ...]")
+    if activations.dim() > 2:
+        return activations.reshape(activations.shape[0], -1)
+    return activations
+
+
+def extract_dim_direction(
+    A_plus: Tensor,
+    A_minus: Tensor,
+    eps: float = EPS_GENERAL,
+) -> Tensor:
+    """Extract a difference-in-means direction."""
+    A_plus = _ensure_2d(A_plus.float())
+    A_minus = _ensure_2d(A_minus.float())
+    direction = A_plus.mean(dim=0) - A_minus.mean(dim=0)
+    norm = torch.norm(direction)
+    if norm < eps:
+        return direction
+    return direction / norm
+
+
+def extract_whitened_lda_direction(
     A_plus: Tensor,
     A_minus: Tensor,
     lambda_reg: float = LAMBDA_CONTRASTIVE,
@@ -95,6 +134,9 @@ def extract_contrastive_direction(
     Returns:
         Normalized contrastive direction [d]
     """
+    A_plus = _ensure_2d(A_plus.float())
+    A_minus = _ensure_2d(A_minus.float())
+
     # Compute class means
     mu_plus = A_plus.mean(dim=0)
     mu_minus = A_minus.mean(dim=0)
@@ -107,7 +149,7 @@ def extract_contrastive_direction(
 
     # Regularized inverse
     d = sigma_w.shape[0]
-    sigma_reg = sigma_w + lambda_reg * torch.eye(d, device=A_plus.device)
+    sigma_reg = sigma_w + lambda_reg * torch.eye(d, device=A_plus.device, dtype=A_plus.dtype)
 
     # Solve linear system instead of explicit inverse
     direction = torch.linalg.solve(sigma_reg, mean_diff)
@@ -120,9 +162,144 @@ def extract_contrastive_direction(
     return direction / norm
 
 
+def extract_whitened_svd_directions(
+    A_plus: Tensor,
+    A_minus: Tensor,
+    n_directions: int = 1,
+    regularization_eps: float = 1e-4,
+    min_variance_ratio: float = 0.01,
+    eps: float = EPS_GENERAL,
+) -> WhitenedSVDResult:
+    """Extract directions with benign-covariance-whitened SVD.
+
+    The negative/benign class defines the baseline covariance. Matched
+    positive-vs-negative differences are then decomposed in whitened space and
+    mapped back into the original activation coordinates.
+    """
+    A_plus = _ensure_2d(A_plus.float())
+    A_minus = _ensure_2d(A_minus.float())
+
+    if A_plus.shape != A_minus.shape:
+        raise ValueError(
+            "whitened_svd requires matched A_plus/A_minus activations with the same shape"
+        )
+    if n_directions < 1:
+        raise ValueError("n_directions must be >= 1")
+
+    n_samples, hidden_dim = A_minus.shape
+    if n_samples < 2:
+        raise ValueError("whitened_svd requires at least two matched activation pairs")
+
+    mu_minus = A_minus.mean(dim=0, keepdim=True)
+    minus_centered = A_minus - mu_minus
+    cov_minus = (minus_centered.T @ minus_centered) / max(n_samples - 1, 1)
+
+    eigenvalues, eigenvectors = torch.linalg.eigh(cov_minus)
+    eigenvalues = eigenvalues.clamp(min=0)
+    max_eig = eigenvalues.max().item()
+    if max_eig <= eps:
+        raise ValueError("whitened_svd cannot whiten a near-zero baseline covariance")
+
+    positive_eigs = eigenvalues[eigenvalues > max_eig * 1e-10]
+    min_eig = positive_eigs.min().item() if positive_eigs.numel() else eps
+    condition_number = max_eig / max(min_eig, eps)
+
+    eig_normalized = eigenvalues / eigenvalues.sum().clamp(min=eps)
+    eig_nonzero = eig_normalized[eig_normalized > eps]
+    effective_rank = torch.exp(-(eig_nonzero * eig_nonzero.log()).sum()).item()
+
+    valid_mask = eigenvalues > max_eig * min_variance_ratio
+    if not torch.any(valid_mask):
+        raise ValueError("whitened_svd retained no covariance dimensions")
+
+    eigenvalues_valid = eigenvalues[valid_mask]
+    eigenvectors_valid = eigenvectors[:, valid_mask]
+
+    inv_sqrt = 1.0 / torch.sqrt(eigenvalues_valid + regularization_eps)
+    whiten_proj = eigenvectors_valid * inv_sqrt.unsqueeze(0)
+
+    plus_whitened = (A_plus - mu_minus) @ whiten_proj
+    minus_whitened = minus_centered @ whiten_proj
+    diff_whitened = plus_whitened - minus_whitened
+
+    k = min(n_directions, diff_whitened.shape[0], diff_whitened.shape[1])
+    if k < 1:
+        raise ValueError("whitened_svd has no valid singular directions")
+
+    _, singular_values, vh = torch.linalg.svd(diff_whitened, full_matrices=False)
+    whitened_dirs = vh[:k]
+    kept_singular_values = singular_values[:k]
+
+    unwhiten_proj = eigenvectors_valid * torch.sqrt(
+        eigenvalues_valid + regularization_eps
+    ).unsqueeze(0)
+    directions = whitened_dirs @ unwhiten_proj.T
+    directions = directions / directions.norm(dim=-1, keepdim=True).clamp(min=eps)
+    whitened_dirs = whitened_dirs / whitened_dirs.norm(dim=-1, keepdim=True).clamp(min=eps)
+
+    # Orient: direction should point from A_minus mean toward A_plus mean
+    mean_diff = A_plus.mean(dim=0) - A_minus.mean(dim=0)
+    for i in range(directions.shape[0]):
+        if (directions[i] @ mean_diff) < 0:
+            directions[i] = -directions[i]
+            whitened_dirs[i] = -whitened_dirs[i]
+
+    total_var = (singular_values ** 2).sum().item()
+    kept_var = (kept_singular_values ** 2).sum().item()
+
+    return WhitenedSVDResult(
+        directions=directions,
+        whitened_directions=whitened_dirs,
+        singular_values=kept_singular_values,
+        variance_explained=kept_var / max(total_var, eps),
+        condition_number=condition_number,
+        effective_rank=effective_rank,
+    )
+
+
+def extract_contrastive_direction(
+    A_plus: Tensor,
+    A_minus: Tensor,
+    eps: float = EPS_GENERAL,
+    method: DirectionMethod = "whitened_svd",
+    n_directions: int = 1,
+    whitening_eps: float = 1e-4,
+    min_variance_ratio: float = 0.01,
+) -> Tensor:
+    """
+    Extract a normalized contrastive direction.
+
+    Args:
+        A_plus: Positive class activations [n+, d]
+        A_minus: Negative class activations [n-, d]
+        eps: Numerical stability
+        method: "whitened_svd" (default) or "dim"
+        n_directions: Number of directions for methods that support subspaces.
+            This wrapper returns the first direction.
+        whitening_eps: Covariance regularization for whitened SVD.
+        min_variance_ratio: Eigenvalue retention floor for whitened SVD.
+
+    Returns:
+        Normalized contrastive direction [d]
+    """
+    if method == "dim":
+        return extract_dim_direction(A_plus, A_minus, eps=eps)
+    if method == "whitened_svd":
+        return extract_whitened_svd_directions(
+            A_plus,
+            A_minus,
+            n_directions=n_directions,
+            regularization_eps=whitening_eps,
+            min_variance_ratio=min_variance_ratio,
+            eps=eps,
+        ).directions[0]
+
+    raise ValueError(f"Unknown direction extraction method: {method!r}")
+
+
 def extract_contrastive_directions_batch(
     activations_by_signal: Dict[str, Tuple[Tensor, Tensor]],
-    lambda_reg: float = LAMBDA_CONTRASTIVE,
+    method: DirectionMethod = "whitened_svd",
 ) -> Dict[str, Tensor]:
     """
     Extract contrastive directions for multiple signals.
@@ -135,7 +312,11 @@ def extract_contrastive_directions_batch(
         {signal_id: direction}
     """
     return {
-        signal: extract_contrastive_direction(A_plus, A_minus, lambda_reg)
+        signal: extract_contrastive_direction(
+            A_plus,
+            A_minus,
+            method=method,
+        )
         for signal, (A_plus, A_minus) in activations_by_signal.items()
     }
 
@@ -248,7 +429,10 @@ def aggregate_directions(
 
 __all__ = [
     "DirectionDynamics",
+    "WhitenedSVDResult",
     "compute_pooled_covariance",
+    "extract_dim_direction",
+    "extract_whitened_svd_directions",
     "extract_contrastive_direction",
     "extract_contrastive_directions_batch",
     "compute_direction_emergence",

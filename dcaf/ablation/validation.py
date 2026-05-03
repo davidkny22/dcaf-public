@@ -1,4 +1,5 @@
-"""Ablation validation for candidate circuits (§11, Def 11.1-11.2).
+"""Ablation validation for candidate circuits (sec:ablation; def:ablation-methods;
+def:behavioral-relevance-confirmation).
 
 Two-stage validation:
 1. Does ablating the weight break GENERAL generation? (perplexity check)
@@ -6,7 +7,7 @@ Two-stage validation:
 2. Does ablating the weight break TARGET BEHAVIOR? (refusal/compliance classification)
    If yes → validate (weight is behavior-specific)
 
-Uses mean ablation (Def 11.1): set weight to its mean value rather than zero,
+Uses mean ablation (def:ablation-methods): set weight to its mean value rather than zero,
 preserving scale while removing specific information.
 
 Extracted from training/trainer.py — validation is an ablation concern, not training.
@@ -42,7 +43,7 @@ def check_coherence(
     device: str = "cuda",
     perplexity_threshold: float = 100.0,
 ) -> Tuple[bool, str]:
-    """Check if a response is coherent using perplexity (Def 11.2).
+    """Check if a response is coherent using perplexity (def:behavioral-relevance-confirmation).
 
     Low perplexity = fluent text. High perplexity = broken generation.
 
@@ -98,7 +99,8 @@ def validate_with_ablation(
     max_test_tokens: int = 50,
     num_test_prompts: int = 5,
 ) -> Tuple[bool, Dict[str, Any]]:
-    """Validate a candidate via mean ablation (Def 11.1-11.2).
+    """Validate a candidate via mean ablation
+    (def:ablation-methods; def:behavioral-relevance-confirmation).
 
     Args:
         model: Model with trained weights

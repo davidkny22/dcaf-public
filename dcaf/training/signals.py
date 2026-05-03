@@ -1,4 +1,4 @@
-"""Composable training signal construction (Def 1.7).
+"""Composable training signal construction (def:canonical-signal-instantiation).
 
 Builds training runs from composable flags. No static variant lists.
 Each flag adds signals to the T+, T-, or T0 cluster independently.
@@ -38,7 +38,7 @@ def build_signal_runs(
     target_only: bool = False,
     opposite_only: bool = False,
 ) -> List[SignalRun]:
-    """Build training runs from composable flags (Def 1.7).
+    """Build training runs from composable flags (def:canonical-signal-instantiation).
 
     Args:
         prefopt: Include preference optimization signals (t1/t6). Always True — core signal.

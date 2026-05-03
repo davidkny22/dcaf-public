@@ -1,7 +1,7 @@
 """
 Projection-level opposition degree via matrix cosine similarity.
 
-Def 3.4, Def 4.4 (§4.3):
+def:opposition-degree; def:opposition-degree-full-methodology:
   cos_opp = cos(flatten(δ̄_+^(proj)), flatten(δ̄_-^(proj)))
   opp_degree = max(0, -cos_opp)
 

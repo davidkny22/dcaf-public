@@ -1,18 +1,19 @@
 """
-Model state management for ablation testing (§11, Def 11.1).
+Model state management for ablation testing (sec:ablation-techniques; def:ablation-methods).
 
-Implements the two ablation techniques from Def 11.1:
+Implements the two ablation techniques from def:ablation-methods:
 - Baseline restoration: replace component weights with baseline model (M_0) values
 - Mean ablation: subtract the safety delta to restore pre-training weights
 
 Provides ModelStateManager for centralized reset/ablate patterns used by
-all ablation strategies throughout §11 phases.
+all ablation strategies throughout sec:ablation phases.
 """
 
-import torch
 from contextlib import contextmanager
-from typing import Dict, List, Generator, Optional, Union
 from pathlib import Path
+from typing import Dict, Generator, List, Optional, Union
+
+import torch
 from transformers import PreTrainedModel
 
 
@@ -136,19 +137,24 @@ class ModelStateManager:
 
     def restore_params(self, params: List[str]) -> None:
         """
-        Restore safety delta to specific parameters.
+        Restore specific parameters to their safety-trained state.
 
-        This adds back the delta to parameters that were previously ablated.
+        Uses snapshot restore (base + delta) rather than additive arithmetic
+        to prevent drift from repeated ablate/restore cycles.
 
         Args:
             params: List of parameter names to restore
         """
         with torch.no_grad():
             for name, param in self.model.named_parameters():
-                if name in params and name in self.safety_delta:
-                    param.add_(
-                        self.safety_delta[name].to(self.device) * self.delta_scale
-                    )
+                if name in params:
+                    base = self.base_checkpoint.get(name)
+                    delta = self.safety_delta.get(name)
+                    if base is not None:
+                        target = base.to(self.device)
+                        if delta is not None:
+                            target = target + delta.to(self.device) * self.delta_scale
+                        param.copy_(target)
         self._current_state = "safety"
 
     @contextmanager

@@ -1,5 +1,5 @@
 """
-Abstract base class for ablation strategies (§11).
+Abstract base class for ablation strategies (sec:ablation).
 
 Provides common infrastructure for all Phase 1-6 ablation strategies:
 - Response generation and classification
@@ -11,9 +11,10 @@ Subclasses implement specific ablation algorithms.
 """
 
 import logging
-import torch
 from abc import ABC, abstractmethod
-from typing import List, Optional, Callable, Tuple, Literal, Dict
+from typing import Callable, Dict, List, Literal, Optional, Tuple
+
+import torch
 from transformers import PreTrainedModel, PreTrainedTokenizer
 
 logger = logging.getLogger(__name__)
@@ -22,12 +23,12 @@ from dcaf.ablation.methods import ModelStateManager
 from dcaf.ablation.results import (
     AblationConfig,
     AblationResult,
-    ResponseCategory,
     ProbeTypeResult,
+    ResponseCategory,
     WeightClassification,
 )
 from dcaf.core.defaults import CLASSIFICATION_THRESHOLD, SEPARATION_RATIO, TAU_PPL
-from dcaf.data.prompt_legacy import is_harmful_heuristic, HARM_KEYWORDS, BENIGN_TEST_PROMPTS
+from dcaf.data.prompt_legacy import BENIGN_TEST_PROMPTS, HARM_KEYWORDS, is_harmful_heuristic
 
 CoherenceMethod = Literal["heuristic", "perplexity"]
 

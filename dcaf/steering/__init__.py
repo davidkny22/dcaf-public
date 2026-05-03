@@ -1,22 +1,22 @@
-"""Steering vector optimization (§10, Def 10.1-10.5).
+"""Steering vector optimization (sec:steering).
 
 Re-exports the real implementation from dcaf.circuit.steering.
 """
 
 from dcaf.steering.vectors import (
-    SteeringVector,
     SteeringAlignment,
     SteeringAnalysis,
-    compute_cosine_similarity,
-    optimize_steering_vector,
-    optimize_bidirectional_steering,
-    compute_steering_effectiveness,
+    SteeringVector,
     compute_bidirectional_effectiveness,
-    compute_steering_alignment,
-    get_defensive_vectors,
+    compute_cosine_similarity,
     compute_full_steering_analysis,
-    rank_by_effectiveness,
+    compute_steering_alignment,
+    compute_steering_effectiveness,
+    get_defensive_vectors,
     get_steering_summary,
+    optimize_bidirectional_steering,
+    optimize_steering_vector,
+    rank_by_effectiveness,
 )
 
 __all__ = [

@@ -1,21 +1,22 @@
-"""Phase 7: Unified final classification (Def 11.20, 11.21, 11.23-11.27).
+"""Phase 7: Unified final classification.
 
 Combines all ablation phase outputs into per-component classification:
-- Interaction requirement: ORPHAN / SOLO / PAIR / GATE (Def 11.20)
-- Interaction type: SYNERGISTIC / ADDITIVE / REDUNDANT (Def 11.21)
-- Functional tiers: primary / auxiliary via adaptive thresholds (Def 11.23-11.27)
+- Interaction requirement: ORPHAN / SOLO / PAIR / GATE (def:interaction-requirement)
+- Interaction type: SYNERGISTIC / ADDITIVE / REDUNDANT (def:interaction-type-three)
+- Functional tiers: primary / auxiliary via adaptive thresholds
+  (def:classification-parameters; def:adaptive-threshold-selection;
+  def:tier-assignment; def:classification-output; def:complete-classification)
 """
 
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from dcaf.ablation.superadditivity import InteractionRequirement, InteractionType
 from dcaf.circuit.classification import (
-    FunctionalCategory,
     TieredClassification,
     classify_component_tiered,
 )
-from dcaf.ablation.superadditivity import InteractionRequirement, InteractionType
 
 
 class ComponentStatus(str, Enum):
@@ -26,7 +27,7 @@ class ComponentStatus(str, Enum):
 
 @dataclass
 class FinalClassification:
-    """Complete classification output for a single component (Def 11.27)."""
+    """Complete classification output for a single component (def:complete-classification)."""
 
     component: str
     interaction_requirement: InteractionRequirement
@@ -65,10 +66,10 @@ def classify_final(
     discovery_count: int = 0,
     strategies_found_by: Optional[List[str]] = None,
 ) -> FinalClassification:
-    """Unified Phase 7 classifier (Def 11.20).
+    """Unified Phase 7 classifier (def:interaction-requirement).
 
     Decision logic:
-    1. Run adaptive tiered classification on probe impacts (Def 11.23-11.27)
+    1. Run adaptive tiered classification on probe impacts (def:complete-classification)
     2. Assign interaction requirement:
        - GATE if found in a significant triple
        - PAIR if found in a significant pair (record partner + interaction type)

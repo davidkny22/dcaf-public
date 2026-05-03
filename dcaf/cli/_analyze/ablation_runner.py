@@ -1,5 +1,5 @@
 """
-Ablation testing runners for DCAF analysis (§11 Ablation & Classification).
+Ablation testing runners for DCAF analysis (sec:ablation).
 
 Provides runner/orchestration functions that:
 1. Load model and checkpoints
@@ -13,11 +13,11 @@ All actual ablation logic lives in dcaf.ablation.strategies/.
 import gc
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from dcaf.ablation.results import AblationResults
 from dcaf.core.defaults import CLASSIFICATION_THRESHOLD, HARM_THRESHOLD, SEPARATION_RATIO
-from dcaf.data.test_banks import get_refusal_test_prompts, get_benign_test_prompts
+from dcaf.data.test_banks import get_benign_test_prompts, get_refusal_test_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,8 @@ def run_ablation_testing(
     """
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from dcaf.ablation import ModelStateManager, AblationConfig, ResponseCategory
+
+    from dcaf.ablation import AblationConfig, ModelStateManager, ResponseCategory
     from dcaf.ablation.strategies.single_param import SingleParamAblation
     from dcaf.evaluation.refusal import RefusalClassifier
     from dcaf.storage.delta_store import DeltaStore
@@ -310,7 +311,7 @@ def run_ablation_testing(
         logger.info(f"[{i+1}/{len(params_to_test)}] {param_name}")
 
         if param_name not in combined_delta:
-            logger.warning(f"  No delta found for param, skipping")
+            logger.warning("  No delta found for param, skipping")
             skipped_count += 1
             continue
 
@@ -335,7 +336,7 @@ def run_ablation_testing(
             logger.info(f"  -> {status}")
 
         except torch.cuda.OutOfMemoryError:
-            logger.warning(f"  OOM, skipping")
+            logger.warning("  OOM, skipping")
             gc.collect()
             torch.cuda.empty_cache()
             skipped_count += 1
@@ -388,7 +389,8 @@ def run_baseline_validation(
     """
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from dcaf.ablation import ModelStateManager, AblationConfig
+
+    from dcaf.ablation import AblationConfig, ModelStateManager
     from dcaf.ablation.baselines import BaselineValidator
     from dcaf.storage import DeltaStore
 
@@ -492,7 +494,8 @@ def run_pair_ablation(
     """
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from dcaf.ablation import ModelStateManager, AblationConfig
+
+    from dcaf.ablation import AblationConfig, ModelStateManager
     from dcaf.ablation.baselines import COMPLETION_PROMPTS_VIOLENCE
     from dcaf.ablation.strategies.pair_ablation import PairAblation
     from dcaf.storage import DeltaStore
@@ -594,7 +597,8 @@ def run_binary_ablation(
     """
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from dcaf.ablation import ModelStateManager, AblationConfig
+
+    from dcaf.ablation import AblationConfig, ModelStateManager
     from dcaf.ablation.baselines import COMPLETION_PROMPTS_VIOLENCE
     from dcaf.ablation.strategies.binary_search import BinarySearchAblation
     from dcaf.storage import DeltaStore
@@ -696,7 +700,8 @@ def run_group_ablation(
     """
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from dcaf.ablation import ModelStateManager, AblationConfig
+
+    from dcaf.ablation import AblationConfig, ModelStateManager
     from dcaf.ablation.strategies.group_ablation import GroupAblation
     from dcaf.evaluation.refusal import RefusalClassifier
     from dcaf.storage.delta_store import DeltaStore

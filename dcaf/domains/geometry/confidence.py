@@ -1,16 +1,17 @@
 """
 Geometry confidence computation.
 
-Implements Def 6.15 (§6.7):
+Implements def:geometric-confidence:
 C_G^(k) = LRS(k) · gen(k)
 """
 
-from typing import Dict, List, Set, Any
 from dataclasses import dataclass
+from typing import Any, Dict, List, Set
 
 from dcaf.core.defaults import TAU_G_DEFAULT
-from .lrs import LRSResult, LRSBreakdown
+
 from .generalization import GeneralizationResult
+from .lrs import LRSResult
 
 
 def _clamp_unit(value: float) -> float:

@@ -1,5 +1,5 @@
 """
-Probe analysis runner for DCAF (§9 Circuit Graph).
+Probe analysis runner for DCAF (sec:circuit-graph).
 
 Captures pre- and post-training activations, identifies circuits from weight
 candidates, and validates circuits with safety measurements.
@@ -10,7 +10,7 @@ All activation capture happens during analysis — no special training flags nee
 import gc
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from dcaf.core.defaults import ATTENTION_WEIGHT, TAU_EDGE
 
@@ -60,12 +60,12 @@ def run_probe_analysis(
         return None
 
     try:
+        from dcaf.circuit import CircuitIdentifier
         from dcaf.domains.activation import (
             ActivationCapture,
             ActivationDelta,
             ProbeSet,
         )
-        from dcaf.circuit import CircuitIdentifier
     except ImportError as e:
         logger.error(f"Probing/circuit module not available: {e}")
         return None

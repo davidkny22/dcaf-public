@@ -1,5 +1,5 @@
 """
-Full-run output JSON schema assembly (§13, Def 13.1-13.4).
+Full-run output JSON schema assembly (app:output).
 
 Assembles all DCAF analysis results into a unified JSON output schema.
 Covers the complete pipeline output: discovery summary, domain summaries,
@@ -8,8 +8,8 @@ triangulated confidence, per-component results, and ablation confirmation.
 For the lightweight in-memory per-component assembler, see dcaf.output.results.
 """
 
-from typing import Dict, List, Any, Optional
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 import dcaf
 
@@ -29,7 +29,7 @@ def assemble_output(
     config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Assemble complete DCAF output matching Spec Section 13.
+    Assemble complete DCAF output matching app:output.
 
     Args:
         run_path: Path to the run directory
@@ -46,7 +46,7 @@ def assemble_output(
         config: Full configuration used
 
     Returns:
-        Dict matching spec Section 13 output schema:
+        Dict matching app:output schema:
         {
             "dcaf_version", "timestamp", "run",
             "discovery", "domains": {weight, activation, geometry},
@@ -116,7 +116,12 @@ def assemble_component_output(
         "classification": classification,
         "interaction": interaction or {"requirement": None, "partners": [], "type": None},
         "ablation": ablation or {"confirmed": None, "status": "untested"},
-        "diagnostics": diagnostics or {},
+        "diagnostics": diagnostics or {
+            "domain_contributions": None,
+            "domain_deviations": None,
+            "disagreement": None,
+            "signal_breakdown": None,
+        },
     }
 
 

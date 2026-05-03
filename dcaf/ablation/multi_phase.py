@@ -1,5 +1,5 @@
 """
-Multi-phase ablation aggregator (§11, Phases 3-6).
+Multi-phase ablation aggregator (sec:phase-3-refinement through sec:phase-6-orphan-analysis).
 
 Aggregates results from Phases 3-6 into a single result object:
   Phase 3: Refinement (leave-one-out minimal subset)
@@ -8,14 +8,14 @@ Aggregates results from Phases 3-6 into a single result object:
   Phase 6: Orphan retesting
 """
 
-from typing import Dict, List, Any
 from dataclasses import dataclass, field
+from typing import Any, Dict, List
 
-from dcaf.ablation.refinement import RefinementResult
 from dcaf.ablation.counting import CrossValidationResult
-from dcaf.ablation.triples import TriplesResult
 from dcaf.ablation.orphans import OrphanTestResult
+from dcaf.ablation.refinement import RefinementResult
 from dcaf.ablation.superadditivity import InteractionType
+from dcaf.ablation.triples import TriplesResult
 
 
 @dataclass

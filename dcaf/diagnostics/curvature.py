@@ -1,5 +1,5 @@
 """
-Online curvature tracking during training (§7, Def 7.2).
+Online curvature tracking during training (sec:curvature-tracking; def:online-curvature).
 
 Measures whether training took a straight or winding path through
 activation space. A curvature of 0 means the path was perfectly straight;
@@ -11,9 +11,9 @@ The tracker is designed for online use: initialize once at the start of
 training, call update at each evaluation step, and finalize at the end.
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional, Callable
 import logging
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Optional
 
 import torch
 

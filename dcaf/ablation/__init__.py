@@ -1,4 +1,4 @@
-"""Ablation methodology and functional classification (§11).
+"""Ablation methodology and functional classification (sec:ablation).
 
 The package initializer keeps import-time side effects low. Torch-backed
 runtime helpers are loaded lazily through ``__getattr__``.

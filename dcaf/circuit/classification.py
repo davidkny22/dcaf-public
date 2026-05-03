@@ -1,19 +1,20 @@
 """
 Functional classification of circuit components.
 
-Implements Def 11.23-11.27 (§11.5):
+Implements def:classification-parameters, def:adaptive-threshold-selection,
+def:tier-assignment, def:classification-output, and def:complete-classification:
 class(k) = Recognition | Steering | Preference | Shared | FalsePositive
 """
 
-from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any, Dict, List
 
 from dcaf.core.defaults import (
     CLASSIFICATION_THRESHOLD,
-    R_STRICT_PRIMARY,
-    R_RELAXED_PRIMARY,
     R_AUX,
+    R_RELAXED_PRIMARY,
+    R_STRICT_PRIMARY,
     TAU_ABS,
     TAU_GAP,
     TAU_ORPHAN,
@@ -70,7 +71,7 @@ class ComponentClassification:
 @dataclass
 class TieredClassification:
     """
-    Adaptive tiered classification result (Def 11.23-11.27 (§11.5)).
+    Adaptive tiered classification result (sec:adaptive-tiered-functional-classification).
 
     Uses adaptive thresholds based on impact distribution:
     - Tight clustering (max_gap < TAU_GAP) uses R_RELAXED_PRIMARY
@@ -135,7 +136,7 @@ def classify_component_tiered(
     component_confidence: float = 0.0,
 ) -> TieredClassification:
     """
-    Adaptive tiered classification (Def 11.23-11.27 (§11.5)).
+    Adaptive tiered classification (sec:adaptive-tiered-functional-classification).
 
     Algorithm:
     1. All impacts < TAU_ABS → FalsePositive

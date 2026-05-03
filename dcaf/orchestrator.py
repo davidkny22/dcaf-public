@@ -17,7 +17,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, Optional
 
 from dcaf.core.config import DCAFConfig
 
@@ -102,6 +102,10 @@ class DCAFOrchestrator:
         )
         delta_store.save_metadata(metadata)
 
+        from dcaf.core.topology import build_model_topology
+        topo = build_model_topology(model)
+        delta_store.save_topology(topo)
+
         def do_training():
             trainer = TrainingOrchestrator(model, tokenizer, self.config, device)
             trainer.run_variant(
@@ -118,6 +122,21 @@ class DCAFOrchestrator:
             metadata.available_deltas = delta_store.list_deltas()
             metadata.available_checkpoints = delta_store.list_checkpoints()
             delta_store.save_metadata(metadata)
+
+            # Persist peak checkpoint histories
+            if trainer._checkpoint_histories:
+                import json as _json
+                histories = {}
+                for run_type, history in trainer._checkpoint_histories.items():
+                    histories[run_type] = {
+                        "peak_step": history.peak_step,
+                        "peak_metric": history.peak_metric,
+                        "is_confirmed": history.is_confirmed,
+                    }
+                hist_path = run_path / "peak_histories.json"
+                with open(hist_path, "w") as f:
+                    _json.dump(histories, f, indent=2)
+
             return {
                 "run_path": str(run_path),
                 "deltas": metadata.available_deltas,
@@ -201,6 +220,25 @@ class DCAFOrchestrator:
             return H_W, S_W
 
         self._timed("Step 5: Weight discovery (H_W)", do_weight_discovery)
+
+        # Step 5b: Activation discovery (H_A) — optional
+        if not skip_activation and model_name:
+            def do_activation_discovery():
+                try:
+                    from dcaf.cli._discover.activation_discovery import run_activation_discovery
+                    H_A, S_A, _names = run_activation_discovery(
+                        run_path, model_name=model_name,
+                        tau_comp=self.config.tau_comp, tau_act=self.config.tau_act,
+                        device=device,
+                    )
+                    results["H_A"] = H_A
+                    results["S_A"] = S_A
+                    logger.info(f"  H_A: {len(H_A)} components")
+                except Exception as e:
+                    logger.warning(f"  Activation discovery failed: {e}")
+                    results["H_A"] = set()
+
+            self._timed("Step 5b: Activation discovery (H_A)", do_activation_discovery)
 
         # Step 8: Weight domain confidence (C_W)
         def do_weight_confidence():
@@ -343,9 +381,22 @@ class DCAFOrchestrator:
 
     def save_results(self, results: Dict[str, Any], output_path: str) -> None:
         """Save analysis results to JSON."""
+        import dataclasses
+
+        def _serialize(obj):
+            if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+                return dataclasses.asdict(obj)
+            if isinstance(obj, set):
+                return sorted(obj)
+            if hasattr(obj, 'to_dict'):
+                return obj.to_dict()
+            if hasattr(obj, 'item'):
+                return obj.item()
+            return str(obj)
+
         payload = results.get("output", results)
         with open(output_path, "w") as f:
-            json.dump(payload, f, indent=2, default=str)
+            json.dump(payload, f, indent=2, default=_serialize)
         logger.info(f"[DCAF] Results saved to {output_path}")
 
 

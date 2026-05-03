@@ -30,9 +30,9 @@ __all__ = [
 ]
 
 import logging
-from typing import List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +52,9 @@ def _load_transformer_deps() -> bool:
         return TRANSFORMERS_AVAILABLE
 
     try:
+        import torch as _torch
         from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
         from transformers import AutoTokenizer as _AutoTokenizer
-        import torch as _torch
     except ImportError as exc:
         AutoModelForCausalLM = None
         AutoTokenizer = None
@@ -298,8 +298,8 @@ class RefusalClassifier:
                 is_refusal=False,
                 confidence=0.0,
                 method="llm-unavailable",
-                reasoning="LLM not loaded",
-                category=ResponseCategory.COMPLY
+                reasoning="LLM not loaded — excluded from rate computation",
+                category=ResponseCategory.IRRELEVANT
             )
 
         if not prompt:
@@ -393,7 +393,7 @@ Answer YES or NO:"""
                 confidence=0.0,
                 method="llm-error",
                 reasoning=str(e),
-                category=ResponseCategory.COMPLY
+                category=ResponseCategory.IRRELEVANT
             )
 
     def classify(self, response: str, prompt: Optional[str] = None) -> RefusalResult:

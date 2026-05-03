@@ -7,7 +7,7 @@ Activation filtering validates that candidates show consistent
 activation pattern changes across training signals and probe types.
 """
 
-from typing import Dict, Set, List, Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from dcaf.core.defaults import TAU_A_DEFAULT
 
@@ -37,12 +37,10 @@ def filter_by_activation_confidence(
     for param_id in candidates:
         component = component_map.get(param_id)
         if component is None:
-            # No component mapping - include by default
-            passed.add(param_id)
             continue
 
         c_a = activation_confidences.get(component)
-        if c_a is None or c_a >= tau_A:
+        if c_a is not None and c_a >= tau_A:
             passed.add(param_id)
 
     return passed

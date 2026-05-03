@@ -5,12 +5,12 @@ Combines confidence scores from all three domains to rank candidates
 for further analysis (ablation testing, circuit construction).
 """
 
-from typing import Dict, Set, List, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
+from dcaf.confidence.triangulation import triangulate
 from dcaf.core.defaults import DEFAULT_MISSING_CONFIDENCE
-from dcaf.confidence.triangulation import triangulate, TriangulatedConfidence
 
 
 class RankingMethod(str, Enum):
@@ -72,7 +72,7 @@ def compute_combined_score(
 
     elif method == RankingMethod.WEIGHT_PRIORITY:
         # Weight is primary, others are tiebreakers
-        return w + 0.01 * a + 0.0001 * g
+        return min(1.0, w + 0.01 * a + 0.0001 * g)
 
     else:
         return (w * a * g) ** (1/3)
@@ -109,7 +109,7 @@ def rank_candidates(
 
         if component_map and (activation_confidences or geometry_confidences):
             component = component_map.get(param_id)
-            if component:
+            if component is not None:
                 if activation_confidences:
                     c_a = activation_confidences.get(component)
                 if geometry_confidences:

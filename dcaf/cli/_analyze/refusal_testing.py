@@ -1,11 +1,10 @@
 """
-Refusal rate testing for DCAF analysis (§11.13 Harm Rate Measurement).
+Refusal rate testing for DCAF analysis (sec:ablation).
 
 Tests model refusal rates against harmful prompts before and after applying
 each saved delta, providing a behavioral signal comparison.
 """
 
-import gc
 import logging
 from pathlib import Path
 from typing import Optional
@@ -29,6 +28,7 @@ def test_refusal_rates(
     """Test refusal rates on base model and after applying each delta."""
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
+
     from dcaf.evaluation.refusal import RefusalClassifier
     from dcaf.storage.delta_store import DeltaStore
 
@@ -59,40 +59,35 @@ def test_refusal_rates(
     # Load base checkpoint
     base_checkpoint = delta_store.load_checkpoint("base")
 
+    # Load classifier ONCE — reuse across all measurements to avoid
+    # repeatedly loading an 8B model
+    logger.info("Loading refusal classifier (shared across measurements)...")
+    shared_classifier = RefusalClassifier(
+        method="llm",
+        device=device,
+        model_name=classifier_model,
+        load_in_8bit=classifier_8bit,
+        load_in_4bit=classifier_4bit,
+    )
+
     def measure_refusal(model, name: str) -> dict:
         """Measure refusal rate using LLM classifier."""
         model.eval()
 
-        # Load classifier
-        logger.info(f"  Loading classifier for {name}...")
-        classifier = RefusalClassifier(
-            method="llm",
-            device=device,
-            model_name=classifier_model,
-            load_in_8bit=classifier_8bit,
-            load_in_4bit=classifier_4bit,
-        )
-
         refusals = 0
-        try:
-            for prompt in prompts:
-                inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=128).to(device)
-                with torch.no_grad():
-                    outputs = model.generate(
-                        **inputs,
-                        max_new_tokens=60,
-                        do_sample=False,
-                        pad_token_id=tokenizer.eos_token_id,
-                    )
-                response = tokenizer.decode(outputs[0], skip_special_tokens=True)[len(prompt):]
-                result = classifier.classify(response, prompt)
-                if result.is_refusal:
-                    refusals += 1
-        finally:
-            del classifier
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+        for prompt in prompts:
+            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=128).to(device)
+            with torch.no_grad():
+                outputs = model.generate(
+                    **inputs,
+                    max_new_tokens=60,
+                    do_sample=False,
+                    pad_token_id=tokenizer.eos_token_id,
+                )
+            response = tokenizer.decode(outputs[0], skip_special_tokens=True)[len(prompt):]
+            result = shared_classifier.classify(response, prompt)
+            if result.is_refusal:
+                refusals += 1
 
         rate = refusals / len(prompts)
         logger.info(f"  {name}: {rate:.1%} ({refusals}/{len(prompts)})")

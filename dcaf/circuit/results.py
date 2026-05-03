@@ -1,5 +1,5 @@
 """
-Result dataclasses for circuit analysis (§9, Def 9.9).
+Result dataclasses for circuit analysis (sec:circuit-graph; def:behavioral-circuit-graph).
 
 Provides structured types for circuits, validation, and analysis results.
 For activation-related types (ActivationSnapshot, ActivationDelta),
@@ -7,15 +7,15 @@ see dcaf.domains.activation.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from dcaf.core.defaults import ATTENTION_WEIGHT, TAU_EDGE
 
 if TYPE_CHECKING:
-    from dcaf.circuit.graph import CircuitEdge, CircuitNode
     from dcaf.ablation.results import WeightClassification
+    from dcaf.circuit.graph import CircuitEdge, CircuitNode
 
 
 __all__ = [
@@ -233,12 +233,23 @@ class CircuitAnalysisResults:
                 for name, wc_data in c_data["weight_classifications"].items():
                     weight_classifications[name] = WeightClassification.from_dict(wc_data)
 
+            nodes = {}
+            if c_data.get("nodes"):
+                from dcaf.circuit.graph import CircuitNode
+                for node_name, node_data in c_data["nodes"].items():
+                    nodes[node_name] = CircuitNode(
+                        name=node_name,
+                        generation_score=node_data.get("generation_score", 0.0),
+                        is_generation_steering=node_data.get("is_generation_steering", False),
+                    )
+
             circuits.append(
                 Circuit(
                     name=c_data["name"],
                     components=c_data.get("components", []),
                     weight_params=c_data.get("weight_params", []),
                     flow=c_data.get("flow", []),
+                    nodes=nodes,
                     edges=edges,
                     clustering_method=c_data.get("clustering_method", "disjoint"),
                     validation=validation,

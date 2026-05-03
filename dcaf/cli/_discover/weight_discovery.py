@@ -1,5 +1,5 @@
 """
-Weight-based discovery runner (H_W) (§3 Multi-Path Discovery, §4 Weight Analysis).
+Weight-based discovery runner (H_W) (sec:multi-path-discovery; sec:weight-analysis).
 
 Identifies named parameters that changed significantly during behavioral training.
 Operates at named-parameter granularity (one weight matrix = one unit).
@@ -12,15 +12,19 @@ Algorithm:
 
 import logging
 from pathlib import Path
-from typing import Dict, Set, Tuple, List, Optional
+from typing import Dict, List, Set, Tuple
 
 import numpy as np
 import torch
 from torch import Tensor
 
 from dcaf.arch.transformer import should_exclude_param
-from dcaf.core.defaults import TAU_SIG, TAU_BASE
+from dcaf.core.defaults import ALPHA, TAU_BASE, TAU_SIG, Q
 from dcaf.core.signals import CANONICAL_SIGNALS
+from dcaf.domains.weight import (
+    compute_effectiveness_from_training_metrics,
+    create_uniform_effectiveness,
+)
 from dcaf.storage.delta_store import DeltaStore
 
 logger = logging.getLogger(__name__)
@@ -28,8 +32,18 @@ logger = logging.getLogger(__name__)
 
 def _compute_param_norms(
     delta: Dict[str, Tensor],
+    use_rms: bool = False,
 ) -> Dict[str, float]:
-    """Compute L2 norm for each named parameter in a delta."""
+    """Compute norm for each unit in a delta.
+
+    Args:
+        delta: {unit_id: tensor} — projections or parameters
+        use_rms: If True, use RMS normalization (||ΔW||_F / √(m·n)).
+                 If False, use raw Frobenius norm.
+    """
+    if use_rms:
+        from dcaf.domains.weight.delta import compute_projection_rms
+        return {name: compute_projection_rms(tensor) for name, tensor in delta.items()}
     return {name: torch.norm(tensor).item() for name, tensor in delta.items()}
 
 
@@ -45,11 +59,13 @@ def _is_significant(
     param_name: str,
     delta: Dict[str, Tensor],
     threshold: float,
+    use_rms: bool = True,
 ) -> bool:
     """Check if a named parameter's delta norm exceeds the threshold."""
     if param_name not in delta:
         return False
-    return torch.norm(delta[param_name]).item() >= threshold
+    norms = _compute_param_norms({param_name: delta[param_name]}, use_rms=use_rms)
+    return norms[param_name] >= threshold
 
 
 def _sign_opposes(
@@ -81,7 +97,7 @@ def run_weight_discovery(
     3. Check opposition between T+ and T- signals
     4. Filter out parameters significant in T0 (language baseline)
 
-    Score: S_W = (fraction of signals where significant) with opposition bonus.
+    Score: S_W = effectiveness-weighted significant-signal fraction with opposition bonus.
     H_W = parameters with S_W > 0.
 
     Args:
@@ -106,17 +122,27 @@ def run_weight_discovery(
 
     # Load all deltas as Dict[signal_name, Dict[param_name, Tensor]]
     logger.info("\nLoading deltas...")
-    deltas: Dict[str, Dict[str, Tensor]] = {}
+    raw_deltas: Dict[str, Dict[str, Tensor]] = {}
     for name in available_deltas:
-        deltas[name] = delta_store.load_delta(name)
+        raw_deltas[name] = delta_store.load_delta(name)
 
-    # Collect all parameter names
+    # Load topology for projection-level analysis (§3.1: "Weight-based
+    # discovery identifies projections that changed substantially")
+    from dcaf.core.topology import expand_deltas_to_projections
+
+    topo = delta_store.load_topology()
+    logger.info(f"  Topology: {len(topo.projections)} projections, {len(topo.components)} components")
+
+    deltas: Dict[str, Dict[str, Tensor]] = {}
+    for sig_name, raw_delta in raw_deltas.items():
+        deltas[sig_name] = expand_deltas_to_projections(raw_delta, topo)
+
     all_params: Set[str] = set()
     for delta in deltas.values():
         all_params.update(delta.keys())
     param_names = sorted(all_params)
 
-    logger.info(f"Total named parameters: {len(param_names)}")
+    logger.info(f"Total analysis units: {len(param_names)}")
 
     # Detect signal clusters from canonical IDs and legacy names.
     def _classify(name: str) -> str:
@@ -144,12 +170,14 @@ def run_weight_discovery(
     logger.info(f"  T- (opposite): {len(t_minus_present)} - {list(t_minus_present.keys())}")
     logger.info(f"  T0 (baseline): {len(t_zero_present)} - {list(t_zero_present.keys())}")
 
+    use_rms = True
+
     # Precompute thresholds (once per signal)
     sig_thresholds: Dict[str, float] = {}
     base_thresholds: Dict[str, float] = {}
 
     for signal_name, delta in deltas.items():
-        norms = _compute_param_norms(delta)
+        norms = _compute_param_norms(delta, use_rms=use_rms)
         sig_thresholds[signal_name] = _percentile_threshold(norms, tau_sig)
         if _classify(signal_name) == "0":
             base_thresholds[signal_name] = _percentile_threshold(norms, tau_base)
@@ -162,13 +190,29 @@ def run_weight_discovery(
         for name, thresh in base_thresholds.items():
             logger.info(f"  {name}: {thresh:.6f}")
 
+    try:
+        metadata = delta_store.load_metadata()
+        training_metrics = metadata.extra.get("training_metrics", {})
+    except Exception as exc:
+        logger.warning("Could not load training metrics metadata: %s", exc)
+        training_metrics = {}
+
+    if training_metrics:
+        effectiveness = compute_effectiveness_from_training_metrics(
+            training_metrics,
+            available_deltas,
+        )
+    else:
+        logger.warning("No training metrics found; using uniform effectiveness")
+        effectiveness = create_uniform_effectiveness(available_deltas)
+
     # Score each named parameter
     logger.info(f"\nScoring {len(param_names)} parameters...")
     S_W: Dict[str, float] = {}
     H_W: Set[str] = set()
 
     behavioral_signals = {**t_plus_present, **t_minus_present}
-    n_behavioral = len(behavioral_signals) if behavioral_signals else 1
+    len(behavioral_signals) if behavioral_signals else 1
 
     for param_name in param_names:
         # Skip excluded patterns (embeddings, layernorms, etc.)
@@ -181,8 +225,9 @@ def run_weight_discovery(
             if param_name in t0_delta:
                 threshold = base_thresholds[t0_name]
                 if threshold == 0.0:
-                    continue  # Zero threshold means signal had no changes — skip
-                norm = torch.norm(t0_delta[param_name]).item()
+                    continue
+                norms_dict = _compute_param_norms({param_name: t0_delta[param_name]}, use_rms=use_rms)
+                norm = norms_dict[param_name]
                 if norm >= threshold:
                     baseline_passed = False
                     break
@@ -190,16 +235,19 @@ def run_weight_discovery(
         if not baseline_passed:
             continue
 
-        # 2. Signal presence: fraction of behavioral signals where significant
-        sig_count = 0
+        # 2. Signal presence: effectiveness-weighted significant signals
+        weighted_sig = 0.0
+        weighted_total = 0.0
         for sig_name, sig_delta in behavioral_signals.items():
-            if _is_significant(param_name, sig_delta, sig_thresholds[sig_name]):
-                sig_count += 1
+            eff_q = effectiveness.get(sig_name, 1.0) ** Q
+            weighted_total += eff_q
+            if _is_significant(param_name, sig_delta, sig_thresholds[sig_name], use_rms=use_rms):
+                weighted_sig += eff_q
 
-        if sig_count == 0:
+        if weighted_sig == 0:
             continue
 
-        signal_presence = sig_count / n_behavioral
+        signal_presence = weighted_sig / max(weighted_total, 1e-8)
 
         # 3. Opposition bonus: check if T+ and T- oppose
         has_opposition = False
@@ -211,7 +259,7 @@ def run_weight_discovery(
             if has_opposition:
                 break
 
-        opp_bonus = 0.3 if has_opposition else 0.0
+        opp_bonus = ALPHA if has_opposition else 0.0
 
         # S_W = min(1, signal_presence + opp_bonus)
         score = min(1.0, signal_presence + opp_bonus)

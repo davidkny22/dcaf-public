@@ -1,41 +1,41 @@
-"""Candidate set construction and filtering (§8, Def 8.4-8.5)."""
+"""Candidate set construction and filtering (sec:candidate-set-construction)."""
 
+from dcaf.candidates.activation_filter import (
+    filter_by_activation_confidence,
+    filter_components_by_activation,
+    get_activation_confidence_for_params,
+    rank_by_activation_confidence,
+)
 from dcaf.candidates.candidate_set import (
-    CandidateStatus,
     CandidateInfo,
     CandidateSet,
+    CandidateStatus,
+    create_confirmed_set,
     create_discovery_set,
     create_multi_path_discovery_set,
     create_validated_set,
-    create_confirmed_set,
+)
+from dcaf.candidates.geometry_filter import (
+    filter_by_geometry_confidence,
+    filter_by_lrs,
+    filter_components_by_geometry,
+    get_geometry_confidence_for_params,
+    rank_by_geometry_confidence,
 )
 from dcaf.candidates.ranking import (
-    RankingMethod,
     RankedCandidate,
+    RankingMethod,
     compute_combined_score,
+    get_ranking_summary,
     rank_candidates,
     rank_components,
-    get_ranking_summary,
 )
 from dcaf.candidates.weight_filter import (
+    compute_weight_statistics,
     filter_by_weight_confidence,
     filter_by_weight_percentile,
     filter_by_weight_top_k,
     rank_by_weight_confidence,
-    compute_weight_statistics,
-)
-from dcaf.candidates.activation_filter import (
-    filter_by_activation_confidence,
-    filter_components_by_activation,
-    rank_by_activation_confidence,
-    get_activation_confidence_for_params,
-)
-from dcaf.candidates.geometry_filter import (
-    filter_by_geometry_confidence,
-    filter_components_by_geometry,
-    rank_by_geometry_confidence,
-    get_geometry_confidence_for_params,
-    filter_by_lrs,
 )
 
 __all__ = [

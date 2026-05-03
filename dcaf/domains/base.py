@@ -13,10 +13,13 @@ Each domain:
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Set, List, Any, Optional, Generic, TypeVar
+from typing import Any, Dict, Generic, List, Optional, Set, TypeVar
 
 from dcaf.core.defaults import (
-    TAU_W_DEFAULT, W_DISCOVERY, EPSILON_TRI, DEFAULT_MISSING_CONFIDENCE,
+    DEFAULT_MISSING_CONFIDENCE,
+    EPSILON_TRI,
+    TAU_W_DEFAULT,
+    W_DISCOVERY,
 )
 
 

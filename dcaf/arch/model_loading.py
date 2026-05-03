@@ -13,7 +13,7 @@ importing this module never triggers UnSloth's transformers monkey-patching.
 
 import logging
 import warnings
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Tuple
 
 import torch
 

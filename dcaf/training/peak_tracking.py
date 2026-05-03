@@ -8,9 +8,10 @@ this module tracks peaks that are confirmed stable over subsequent evaluations.
 Algorithm:
     1. Always track the raw best (highest metric value).
     2. A new peak becomes a "candidate" when it exceeds all previous metrics.
-    3. A candidate is "confirmed" if the next K evaluations stay within
-       delta (relative tolerance) of the candidate metric.
-    4. If subsequent metrics drop below tolerance, the candidate is discarded.
+    3. A candidate is "confirmed" if the average of the next K evaluations
+       stays within delta (relative tolerance) of the candidate metric.
+    4. If that K-evaluation average drops below tolerance, the candidate is
+       discarded.
     5. At finalization: use the confirmed peak if available, otherwise fall
        back to the raw best.
 
@@ -34,10 +35,9 @@ Usage:
     # result.peak_weights contains the best stable checkpoint
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
-
 import logging
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 import torch
 
@@ -138,6 +138,8 @@ class PeakTrackingState:
         candidate_weights: Weights snapshot of the candidate (or None).
         candidate_confirmations: Number of subsequent evaluations that
             stayed within tolerance of the candidate.
+        candidate_followup_metrics: Subsequent metrics observed while waiting
+            for the K-evaluation average confirmation test.
         confirmed_metric: Metric of the most recently confirmed peak (or None).
         confirmed_step: Step of the confirmed peak (or None).
         confirmed_weights: Weights of the confirmed peak (or None).
@@ -157,6 +159,7 @@ class PeakTrackingState:
     candidate_step: Optional[int] = None
     candidate_weights: Optional[Dict[str, torch.Tensor]] = None
     candidate_confirmations: int = 0
+    candidate_followup_metrics: List[float] = field(default_factory=list)
 
     # Confirmed peak (stability verified)
     confirmed_metric: Optional[float] = None
@@ -210,57 +213,71 @@ def update_peak_tracking(
 
     # --- 2. Candidate management ---
     if state.candidate_metric is not None:
-        # We have an active candidate -- check stability
-        tolerance_floor = state.candidate_metric * (
-            1.0 - config.peak_stability_tolerance
+        # A higher running maximum supersedes the candidate and restarts the
+        # K-evaluation confirmation window.
+        if metric > state.candidate_metric:
+            logger.debug(
+                "Peak tracking: candidate at step %d superseded by new "
+                "running maximum at step %d (metric=%.6f)",
+                state.candidate_step,
+                step,
+                metric,
+            )
+            state.candidate_metric = metric
+            state.candidate_step = step
+            state.candidate_weights = weights
+            state.candidate_confirmations = 0
+            state.candidate_followup_metrics = []
+            return state
+
+        state.candidate_followup_metrics.append(metric)
+        state.candidate_confirmations = len(state.candidate_followup_metrics)
+        logger.debug(
+            "Peak tracking: candidate at step %d has %d/%d follow-up "
+            "evaluations",
+            state.candidate_step,
+            state.candidate_confirmations,
+            config.peak_confirmation_window,
         )
 
-        if metric >= tolerance_floor:
-            # Metric is within tolerance -- count as confirmation
-            state.candidate_confirmations += 1
-            logger.debug(
-                "Peak tracking: candidate at step %d confirmed %d/%d "
-                "(metric=%.6f, floor=%.6f)",
-                state.candidate_step,
-                state.candidate_confirmations,
-                config.peak_confirmation_window,
-                metric,
-                tolerance_floor,
+        if state.candidate_confirmations >= config.peak_confirmation_window:
+            followups = state.candidate_followup_metrics[
+                : config.peak_confirmation_window
+            ]
+            followup_avg = sum(followups) / len(followups)
+            tolerance_floor = state.candidate_metric - (
+                config.peak_stability_tolerance * abs(state.candidate_metric)
             )
 
-            if state.candidate_confirmations >= config.peak_confirmation_window:
-                # Candidate is now confirmed
+            if followup_avg >= tolerance_floor:
                 logger.info(
                     "Peak tracking: CONFIRMED peak at step %d "
-                    "(metric=%.6f, %d confirmations)",
+                    "(metric=%.6f, follow-up avg=%.6f, %d confirmations)",
                     state.candidate_step,
                     state.candidate_metric,
-                    state.candidate_confirmations,
+                    followup_avg,
+                    config.peak_confirmation_window,
                 )
                 state.confirmed_metric = state.candidate_metric
                 state.confirmed_step = state.candidate_step
                 state.confirmed_weights = state.candidate_weights
-                state.confirmed_count = state.candidate_confirmations
+                state.confirmed_count = config.peak_confirmation_window
+            else:
+                logger.info(
+                    "Peak tracking: DISCARDED candidate at step %d "
+                    "(follow-up avg %.6f below floor %.6f)",
+                    state.candidate_step,
+                    followup_avg,
+                    tolerance_floor,
+                )
+                state.candidate_discard_count += 1
 
-                # Clear candidate slot
-                state.candidate_metric = None
-                state.candidate_step = None
-                state.candidate_weights = None
-                state.candidate_confirmations = 0
-        else:
-            # Metric dropped below tolerance -- discard candidate
-            logger.info(
-                "Peak tracking: DISCARDED candidate at step %d "
-                "(metric dropped to %.6f, floor was %.6f)",
-                state.candidate_step,
-                metric,
-                tolerance_floor,
-            )
-            state.candidate_discard_count += 1
             state.candidate_metric = None
             state.candidate_step = None
             state.candidate_weights = None
             state.candidate_confirmations = 0
+            state.candidate_followup_metrics = []
+            return state
 
     # --- 3. Check if current metric creates a new candidate ---
     # A new candidate must exceed both the current candidate (if any) and
@@ -281,6 +298,7 @@ def update_peak_tracking(
         state.candidate_step = step
         state.candidate_weights = weights
         state.candidate_confirmations = 0
+        state.candidate_followup_metrics = []
 
     return state
 
@@ -365,8 +383,13 @@ def finalize_peak_tracking(state: PeakTrackingState) -> CheckpointHistory:
 # ---------------------------------------------------------------------------
 
 try:
-    from transformers import TrainerCallback, TrainerControl, TrainerState
-    from transformers import TrainingArguments, PreTrainedModel
+    from transformers import (
+        PreTrainedModel,
+        TrainerCallback,
+        TrainerControl,
+        TrainerState,
+        TrainingArguments,
+    )
     _CALLBACK_BASE = TrainerCallback
 except ImportError:
     _CALLBACK_BASE = object

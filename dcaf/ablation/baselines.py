@@ -1,5 +1,5 @@
 """
-Baseline validation for ablation testing (§11).
+Baseline validation for ablation testing (sec:ablation).
 
 Validates that the ablation infrastructure is working correctly before running
 expensive full ablation tests. Tests:
@@ -11,7 +11,8 @@ expensive full ablation tests. Tests:
 
 import logging
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Callable
+from typing import Callable, List, Optional, Tuple
+
 import torch
 from transformers import PreTrainedModel, PreTrainedTokenizer
 
@@ -25,8 +26,8 @@ from dcaf.ablation.results import (
 )
 from dcaf.data.prompt_legacy import (
     COMPLETION_PROMPTS_VIOLENCE,
-    is_harmful_heuristic,
     HARM_KEYWORDS,
+    is_harmful_heuristic,
 )
 
 

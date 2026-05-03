@@ -1,4 +1,4 @@
-"""Edge pathway attribution (Def 9.8).
+"""Edge pathway attribution (def:edge-pathway-attribution).
 
 For attention head edges, determines which input pathway (Q, K, V) carries
 the causal signal by measuring activation delta norms at each projection.
@@ -10,8 +10,8 @@ the causal signal by measuring activation delta norms at each projection.
 For non-attention targets, pathway is {residual: 1.0}.
 """
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict
 
 import torch
 from torch import Tensor

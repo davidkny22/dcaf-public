@@ -10,13 +10,14 @@ Opposition logic should come from weight criteria during cross-validation.
 
 import logging
 import re
-from typing import Dict, List, Set, Optional, Any, Tuple
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Set, Tuple
+
 import numpy as np
 import torch
 
-from dcaf.domains.activation.results import ActivationDelta
 from dcaf.confidence.signals import SignalDetails
+from dcaf.domains.activation.results import ActivationDelta
 
 logger = logging.getLogger(__name__)
 

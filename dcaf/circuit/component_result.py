@@ -1,5 +1,5 @@
 """
-Unified per-component result dataclass (§13, Def 13.4).
+Unified per-component result dataclass (app:output; def:enhanced-component-output).
 
 ComponentResult combines discovery info, domain scores (C_W, C_A, C_G),
 triangulated confidence, functional classification, interaction data,
@@ -10,7 +10,7 @@ Used as the canonical result container across the full pipeline.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 if TYPE_CHECKING:
     from dcaf.diagnostics.alignment import ActivationDeltaAlignment

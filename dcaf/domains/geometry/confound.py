@@ -1,18 +1,20 @@
 """
 Confound direction and independence.
 
-Def 6.6-6.7 (§6.3):
+def:confound-direction; def:confound-independence:
 d_c^(k) = whitened_direction(A_c+, A_c-)
 ρ_c^(k) = 1 - (1/|T+|) · Σ_{i∈T+} |cos(d_i^(k), d_c^(k))|
 """
 
-from typing import Dict, List
 from dataclasses import dataclass
-import torch
-from torch import Tensor
-import torch.nn.functional as F
+from typing import Dict, List
 
-from dcaf.core.defaults import LAMBDA_CONTRASTIVE, EPS_GENERAL
+import torch
+import torch.nn.functional as F
+from torch import Tensor
+
+from dcaf.core.defaults import EPS_GENERAL, LAMBDA_CONTRASTIVE
+
 from .directions import extract_contrastive_direction
 
 
@@ -56,7 +58,7 @@ def extract_confound_direction(
     return extract_contrastive_direction(
         A_confound_plus,
         A_confound_minus,
-        lambda_reg,
+        whitening_eps=lambda_reg,
     )
 
 

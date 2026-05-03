@@ -1,23 +1,23 @@
 """
-Discovery integration (§3, Def 3.15-3.16).
+Discovery integration (sec:discovery-integration).
 
 Combines all three discovery paths into the unified discovery set H_disc
 and computes DiscoveryInfo (path membership, path count, multi-path bonus).
 
-Unified discovery set (Def 3.15):
+Unified discovery set (def:unified-discovery-set):
   H_disc = H_W ∪ H_A ∪ H_G
 
-Component discovery attribution (Def 3.16):
+Component discovery attribution (def:component-discovery-attribution):
   disc_paths(k) = paths that include k
   paths(k) = |disc_paths(k)|
   bonus = beta_path * max(0, paths(k) - 1)
 
 A parameter discovered by ANY path receives confidence scores from ALL domains.
-Path count drives the multi-path discovery bonus in §8 unified confidence.
+Path count drives the multi-path discovery bonus in def:multi-path-discovery-bonus.
 """
 
-from typing import Dict, Set, Tuple, Any
 from dataclasses import dataclass
+from typing import Any, Dict, Set
 
 from dcaf.core.defaults import BETA_PATH
 from dcaf.discovery.info import DiscoveryInfo, compute_multi_path_bonus

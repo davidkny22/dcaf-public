@@ -7,10 +7,9 @@ Weight filtering is the discovery phase - it identifies parameter-level
 candidates based purely on how they responded to training signals.
 """
 
-from typing import Dict, Set, List, Any, Optional, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
-from dcaf.core.defaults import TAU_W_DEFAULT, PERCENTILE_FILTER, TOP_K_CANDIDATES
-from dcaf.confidence.thresholds import ThresholdConfig
+from dcaf.core.defaults import PERCENTILE_FILTER, TAU_W_DEFAULT, TOP_K_CANDIDATES
 
 
 def filter_by_weight_confidence(
@@ -145,7 +144,7 @@ def compute_weight_statistics(
         "std": std,
         "min": min(values),
         "max": max(values),
-        "median": sorted_vals[n // 2],
+        "median": (sorted_vals[n // 2] + sorted_vals[(n - 1) // 2]) / 2,
     }
 
 

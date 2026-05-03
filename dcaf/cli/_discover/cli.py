@@ -1,5 +1,5 @@
 """
-DCAF Discover CLI (§3 Multi-Path Discovery).
+DCAF Discover CLI (sec:multi-path-discovery).
 
 Coordinates the three discovery paths:
   H_W: Weight-based discovery — parameters that changed significantly
@@ -11,20 +11,25 @@ Output: discovery.json saved to run directory.
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
-from typing import Dict, Set, Any, Optional, List
+
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("USE_TORCH", "1")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+from typing import Any, Dict, Set
 
 from dcaf.cli.common import (
-    detect_device,
-    configure_logging,
-    add_run_path_args,
+    add_device_args,
     add_discovery_threshold_args,
     add_model_args,
-    add_device_args,
-    add_probe_args,
     add_output_path_args,
+    add_probe_args,
+    add_run_path_args,
     add_verbose_args,
+    configure_logging,
+    detect_device,
 )
 
 logger = logging.getLogger(__name__)
@@ -120,6 +125,10 @@ def run_discovery(args: argparse.Namespace) -> Dict[str, Any]:
     logger.info(f"Run: {run_path}")
     logger.info(f"Paths: W={args.weight}, A={args.activation}, G={args.gradient}")
 
+    if not args.weight and not args.activation and not args.gradient:
+        logger.error("No discovery paths enabled. Use --weight, --activation, or --gradient.")
+        return {"error": "No discovery paths enabled"}
+
     # Load metadata
     delta_store = DeltaStore(run_path)
     metadata = delta_store.load_metadata()
@@ -128,46 +137,14 @@ def run_discovery(args: argparse.Namespace) -> Dict[str, Any]:
     if model_name is None and metadata:
         model_name = getattr(metadata, 'model_name', None)
 
-    # Initialize results
-    H_W: Set[Any] = set()
-    H_A: Set[Any] = set()
-    H_G: Set[Any] = set()
-    S_W: Dict[Any, float] = {}
-    S_A: Dict[Any, float] = {}
-    S_G: Dict[Any, float] = {}
-    canonical_param_names: Optional[List[str]] = None
-    if args.weight or args.activation or args.gradient:
-        all_delta_params = set()
-        for delta_name in delta_store.list_deltas():
-            all_delta_params.update(delta_store.load_delta(delta_name).keys())
-        canonical_param_names = sorted(all_delta_params)
-        name_to_canonical_index = {
-            name: idx for idx, name in enumerate(canonical_param_names)
-        }
-    else:
-        name_to_canonical_index = {}
-
-    def remap_indices(
-        ids: Set[Any],
-        scores: Dict[Any, float],
-        source_names: Optional[List[str]],
-    ) -> tuple[Set[Any], Dict[Any, float]]:
-        if not source_names:
-            return ids, scores
-        source_to_name = {
-            idx: name for idx, name in enumerate(source_names)
-        }
-        remapped_ids: Set[Any] = set()
-        remapped_scores: Dict[Any, float] = {}
-        for idx in ids:
-            name = source_to_name.get(idx)
-            if name in name_to_canonical_index:
-                remapped_ids.add(name_to_canonical_index[name])
-        for idx, score in scores.items():
-            name = source_to_name.get(idx)
-            if name in name_to_canonical_index:
-                remapped_scores[name_to_canonical_index[name]] = score
-        return remapped_ids, remapped_scores
+    # Initialize results — all discovery paths now return string IDs
+    # (projection IDs for weight/gradient, component IDs for activation)
+    H_W: Set[str] = set()
+    H_A: Set[str] = set()
+    H_G: Set[str] = set()
+    S_W: Dict[str, float] = {}
+    S_A: Dict[str, float] = {}
+    S_G: Dict[str, float] = {}
 
     # ========== H_W: Weight Discovery ==========
     if args.weight:
@@ -177,22 +154,12 @@ def run_discovery(args: argparse.Namespace) -> Dict[str, Any]:
 
         from dcaf.cli._discover.weight_discovery import run_weight_discovery
 
-        H_W, S_W, w_names = run_weight_discovery(
+        H_W, S_W, _w_names = run_weight_discovery(
             run_path=run_path,
             tau_sig=args.tau_sig,
             tau_base=args.tau_base,
         )
-        H_W = {
-            name_to_canonical_index[name]
-            for name in H_W
-            if name in name_to_canonical_index
-        }
-        S_W = {
-            name_to_canonical_index[name]: score
-            for name, score in S_W.items()
-            if name in name_to_canonical_index
-        }
-        logger.info(f"H_W: {len(H_W)} parameters discovered")
+        logger.info(f"H_W: {len(H_W)} projections discovered")
 
     # ========== H_A: Activation Discovery ==========
     if args.activation:
@@ -206,7 +173,7 @@ def run_discovery(args: argparse.Namespace) -> Dict[str, Any]:
 
         from dcaf.cli._discover.activation_discovery import run_activation_discovery
 
-        H_A, S_A, a_names = run_activation_discovery(
+        H_A, S_A, _a_names = run_activation_discovery(
             run_path=run_path,
             model_name=model_name,
             tau_comp=args.tau_comp,
@@ -214,8 +181,7 @@ def run_discovery(args: argparse.Namespace) -> Dict[str, Any]:
             probe_size=args.probe_size,
             device=device,
         )
-        H_A, S_A = remap_indices(H_A, S_A, a_names)
-        logger.info(f"H_A: {len(H_A)} parameters discovered")
+        logger.info(f"H_A: {len(H_A)} components discovered")
 
     # ========== H_G: Gradient Discovery ==========
     if args.gradient:
@@ -229,14 +195,13 @@ def run_discovery(args: argparse.Namespace) -> Dict[str, Any]:
 
         from dcaf.cli._discover.gradient_discovery import run_gradient_discovery
 
-        H_G, S_G, g_names = run_gradient_discovery(
+        H_G, S_G, _g_names = run_gradient_discovery(
             run_path=run_path,
             model_name=model_name,
             tau_grad=args.tau_grad,
             device=device,
         )
-        H_G, S_G = remap_indices(H_G, S_G, g_names)
-        logger.info(f"H_G: {len(H_G)} parameters discovered")
+        logger.info(f"H_G: {len(H_G)} projections discovered")
 
     # ========== Integration ==========
     logger.info("\n" + "-" * 60)
@@ -265,7 +230,7 @@ def run_discovery(args: argparse.Namespace) -> Dict[str, Any]:
             "beta_path": args.beta_path,
         },
         beta_path=args.beta_path,
-        param_names=canonical_param_names,
+        param_names=None,
     )
 
     # Save

@@ -1,8 +1,10 @@
 """
-Confidence thresholds and domain analysis for candidate filtering (§8).
+Confidence thresholds and domain analysis for candidate filtering (sec:unified-confidence).
 
-Implements domain disagreement analysis (Def 13.1-13.3) and threshold
-configuration for candidate set construction (Def 8.4-8.5).
+Implements domain disagreement analysis
+(def:domain-dominance; def:domain-disagreement; def:domain-deviation) and
+threshold configuration for candidate set construction
+(def:candidate-set; def:confirmed-set).
 
 Thresholds:
 - τ_W: Weight confidence threshold (default 0.3; spec tuning range 0.3-0.5)
@@ -15,12 +17,18 @@ candidate sets.
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Any, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from dcaf.core.defaults import (
-    TAU_W_DEFAULT, TAU_A_DEFAULT, TAU_G_DEFAULT, TAU_UNIFIED_DEFAULT,
-    TAU_MIN, TAU_MAX, DEFAULT_MISSING_CONFIDENCE,
-    PERCENTILE_FILTER, TOP_K_CANDIDATES,
+    DEFAULT_MISSING_CONFIDENCE,
+    PERCENTILE_FILTER,
+    TAU_A_DEFAULT,
+    TAU_G_DEFAULT,
+    TAU_MAX,
+    TAU_MIN,
+    TAU_UNIFIED_DEFAULT,
+    TAU_W_DEFAULT,
+    TOP_K_CANDIDATES,
 )
 from dcaf.domains.base import DomainType
 

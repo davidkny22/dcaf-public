@@ -1,5 +1,5 @@
 """
-Named Checkpoint Manager for DCAF training runs (Def 1.10).
+Named Checkpoint Manager for DCAF training runs (def:weight-delta; def:peak-checkpoint).
 
 Provides save/restore functionality for model checkpoints with named references.
 Checkpoints are stored on CPU to minimize GPU memory usage during multi-phase
@@ -20,13 +20,13 @@ Standard checkpoint names (spec-aligned):
 - "checkpoint_t11" - After language baseline training
 """
 
-from dataclasses import dataclass, field
+import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional
-import logging
 
-import torch
 import numpy as np
+import torch
 from transformers import PreTrainedModel
 
 logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ class CheckpointManager:
         "checkpoint_t11": "After language baseline",
     }
 
-    def __init__(self, model: PreTrainedModel, device: str = "cuda"):
+    def __init__(self, model: PreTrainedModel, device: str = None):
         """
         Initialize checkpoint manager.
 
@@ -86,7 +86,7 @@ class CheckpointManager:
             device: Device the model is on (for restore operations)
         """
         self.model = model
-        self.device = device
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self._checkpoints: Dict[str, NamedCheckpoint] = {}
         self._deltas: Dict[str, Dict[str, torch.Tensor]] = {}
         self._current_checkpoint_name: Optional[str] = None
@@ -150,8 +150,19 @@ class CheckpointManager:
                     param.copy_(checkpoint.weights[param_name].to(self.device))
                     restored += 1
 
+        total_params = sum(1 for _ in self.model.named_parameters())
+        missing = total_params - restored
         self._current_checkpoint_name = name
-        logger.info(f"  Restored checkpoint '{name}' ({restored} params)")
+        if missing > 0:
+            pct = missing / total_params * 100
+            msg = f"Restored checkpoint '{name}': {restored}/{total_params} params ({missing} missing, {pct:.1f}%)"
+            if pct > 10:
+                logger.error(msg)
+                raise RuntimeError(f"Checkpoint '{name}' is missing >10% of params ({pct:.1f}%)")
+            else:
+                logger.warning(msg)
+        else:
+            logger.info(f"  Restored checkpoint '{name}' ({restored} params)")
         return restored
 
     def compute_delta(

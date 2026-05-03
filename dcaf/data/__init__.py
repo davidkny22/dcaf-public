@@ -11,77 +11,68 @@ This package provides:
 - Legacy compatibility layer
 """
 
-from .safe_rlhf import (
-    SafeRLHFLoader,
-    SafeRLHFDataset,
-    HARM_CATEGORIES,
-    HARM_CATEGORY_GROUPS,
-    SEVERITY_LEVELS,
-    create_safe_dataloaders,
-    create_unsafe_dataloader,
-)
-
-from .hh_rlhf import (
-    HHRLHFLoader,
-    HHRLHFDataset,
-    create_principle_dataloaders,
-    create_harmful_dataloader,
-)
-
-from .neutral import (
-    NEUTRAL_EXAMPLES,
-    NeutralConversationDataset,
-    DollyLoader,
-    OpenAssistantLoader,
-    create_neutral_dataloader,
-)
-
 from .adversarial import (
     ADVBENCH_PROMPTS,
     BEAVERTAILS_UNSAFE_CATEGORIES,
     AdvBenchDataset,
-    BeaverTailsLoader,
     BeaverTailsDataset,
+    BeaverTailsLoader,
     create_adversarial_dataloader,
 )
-
-from .prompt_core import (
-    PromptFormat,
-    Prompt,
-    ContrastPair,
+from .converters import (
+    completion_to_question,
+    detect_format,
+    instruction_to_question,
+    normalize_to_question,
+    question_to_completion,
+    question_to_instruction,
 )
-
+from .hh_rlhf import (
+    HHRLHFDataset,
+    HHRLHFLoader,
+    create_harmful_dataloader,
+    create_principle_dataloaders,
+)
+from .neutral import (
+    NEUTRAL_EXAMPLES,
+    DollyLoader,
+    NeutralConversationDataset,
+    OpenAssistantLoader,
+    create_neutral_dataloader,
+)
+from .pair_loader import PairLoader
+from .prompt_core import (
+    ContrastPair,
+    Prompt,
+    PromptFormat,
+)
 from .prompt_loader import (
     PromptLoader,
     get_prompts,
     reload_database,
 )
-
-from .pair_loader import PairLoader
-
+from .safe_rlhf import (
+    HARM_CATEGORIES,
+    HARM_CATEGORY_GROUPS,
+    SEVERITY_LEVELS,
+    SafeRLHFDataset,
+    SafeRLHFLoader,
+    create_safe_dataloaders,
+    create_unsafe_dataloader,
+)
+from .safety_prompts import (
+    CompletionPair,
+    PromptPair,
+    SafetyCategory,
+    SafetyPromptDataset,
+)
 from .test_banks import (
-    get_refusal_test_bank,
-    get_refusal_test_prompts,
-    get_benign_test_prompts,
+    BENIGN_TEST_PROMPTS_CHAT,
     REFUSAL_TEST_BANK,
     REFUSAL_TEST_PROMPTS,
-    BENIGN_TEST_PROMPTS_CHAT,
-)
-
-from .converters import (
-    question_to_completion,
-    question_to_instruction,
-    completion_to_question,
-    instruction_to_question,
-    detect_format,
-    normalize_to_question,
-)
-
-from .safety_prompts import (
-    SafetyCategory,
-    PromptPair,
-    CompletionPair,
-    SafetyPromptDataset,
+    get_benign_test_prompts,
+    get_refusal_test_bank,
+    get_refusal_test_prompts,
 )
 
 __all__ = [

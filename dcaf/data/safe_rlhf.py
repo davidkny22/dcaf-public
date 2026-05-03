@@ -29,17 +29,19 @@ Key advantages over HH-RLHF:
 - Severity levels for nuanced analysis
 """
 
-from typing import Dict, List, Optional, Iterator, Set, Union
-import torch
-from torch.utils.data import Dataset, DataLoader
-from transformers import PreTrainedTokenizer
 import logging
+from typing import Dict, List, Optional, Set, Union
+
+import torch
+from torch.utils.data import DataLoader, Dataset
+from transformers import PreTrainedTokenizer
 
 logger = logging.getLogger(__name__)
 
 # Try to import datasets library
 try:
-    from datasets import load_dataset, Dataset as HFDataset
+    from datasets import Dataset as HFDataset
+    from datasets import load_dataset
     DATASETS_AVAILABLE = True
 except ImportError:
     DATASETS_AVAILABLE = False

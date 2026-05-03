@@ -1,18 +1,18 @@
 """
 Projection-level significance predicates.
 
-Def 2.3 (§2):
+def:significance-predicates:
   sig(proj, i) = 1[||ΔW_i^(proj)||_RMS >= Φ_{τ_sig}]
   sig_bar(proj, i) = 1[||ΔW_i^(proj)||_RMS < Φ_{τ_base}]
 
 Percentile thresholds computed across all ~700 RMS-normalized projections.
 """
 
-from typing import Dict, List
+from typing import Dict
 
 import numpy as np
 
-from dcaf.core.defaults import TAU_SIG, TAU_BASE
+from dcaf.core.defaults import TAU_BASE, TAU_SIG
 
 
 def compute_significance(

@@ -5,12 +5,13 @@ Finds minimal critical parameter set via binary search.
 Extracted from run_binary_ablation.py.
 """
 
-from typing import List, Dict, Optional, Callable, Any
+from typing import Any, Callable, Dict, List, Optional
+
 from transformers import PreTrainedModel, PreTrainedTokenizer
 
-from dcaf.ablation.strategies.base import AblationStrategy, CoherenceMethod
 from dcaf.ablation.methods import ModelStateManager
 from dcaf.ablation.results import AblationConfig, BinarySearchResult
+from dcaf.ablation.strategies.base import AblationStrategy, CoherenceMethod
 from dcaf.data.prompt_legacy import BENIGN_TEST_PROMPTS
 
 
@@ -76,6 +77,13 @@ class BinarySearchAblation(AblationStrategy):
         """
         search_log = []
 
+        try:
+            return self._run_search(params, prompts, search_log)
+        finally:
+            self.state_manager.reset_to_safety()
+
+    def _run_search(self, params, prompts, search_log):
+        """Internal search logic — caller guarantees restore via finally."""
         # Verify full set breaks safety first
         self.state_manager.reset_to_safety()
         self.state_manager.ablate_params(params)

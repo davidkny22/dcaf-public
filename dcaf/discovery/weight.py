@@ -1,4 +1,6 @@
-"""Weight-based discovery path H_W (Def 3.5-3.6).
+"""Weight-based discovery path H_W.
+
+Spec: def:weight-based-discovery-score; def:weight-based-discovery-set.
 
 Identifies projections that changed significantly during behavioral training.
 S_W uses the same formula as C_W — discovery and confidence are the same
@@ -7,12 +9,11 @@ computation for the weight domain. The difference is conceptual:
   C_W measures how confident we are (continuous score)
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
 from dcaf.core.defaults import TAU_W_DEFAULT
 from dcaf.domains.weight.confidence import (
     compute_projection_confidence,
-    aggregate_component_confidence,
 )
 
 
@@ -27,7 +28,7 @@ def compute_weight_discovery_scores(
     tau_sig: float = 85.0,
     tau_base: float = 50.0,
 ) -> Dict[str, float]:
-    """Compute S_W for all projections (Def 3.5).
+    """Compute S_W for all projections (def:weight-based-discovery-score).
 
     Args:
         rms_by_signal: {signal_id: {proj_id: rms_norm}} — RMS norms per projection per signal
@@ -69,7 +70,7 @@ def compute_weight_discovery_set(
     tau_W: float = TAU_W_DEFAULT,
     **kwargs,
 ) -> Tuple[Set[str], Dict[str, float]]:
-    """Compute H_W = {proj : S_W(proj) >= tau_W} (Def 3.6).
+    """Compute H_W = {proj : S_W(proj) >= tau_W} (def:weight-based-discovery-set).
 
     Returns:
         (H_W set of projection IDs, {proj_id: S_W score})

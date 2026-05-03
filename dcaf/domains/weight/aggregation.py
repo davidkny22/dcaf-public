@@ -1,20 +1,20 @@
 """
 Projection-level cluster delta aggregation.
 
-Def 3.3 (§3 Multi-Path Discovery, Aggregated Cluster Deltas):
+def:cluster-deltas:
   δ̄_+^(proj) = Σ_{i∈T+} eff(i)·ΔW_i^(proj) / Σ_{i∈T+} eff(i)
 
 Effectiveness-weighted average of delta MATRICES per cluster, using eff(i)^1
 (linear power) for accurate direction estimates (see Effectiveness Power remark).
 """
 
-from typing import Dict, List, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, List, Tuple
 
 import torch
 from torch import Tensor
 
 if TYPE_CHECKING:
-    from dcaf.core.structures import TrainingSignal
+    pass
 
 
 def compute_cluster_delta_matrix(

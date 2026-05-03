@@ -6,8 +6,9 @@ comparing model behavior before and after training or ablation.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 import torch
 
 from dcaf.core.defaults import TAU_EDGE

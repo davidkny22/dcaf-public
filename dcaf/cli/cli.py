@@ -12,7 +12,12 @@ Usage:
     dcaf --help
 """
 
+import os
 import sys
+
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("USE_TORCH", "1")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 from dcaf import __version__
 

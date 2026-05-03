@@ -10,8 +10,8 @@ contrastive direction extraction (per Tan et al., NeurIPS 2024 guidelines).
 """
 
 from dataclasses import dataclass, field
-from typing import Any, List, Dict, Optional, Union
 from enum import Enum
+from typing import Any, Dict, List, Union
 
 
 class PromptFormat(Enum):

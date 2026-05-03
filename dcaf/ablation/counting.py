@@ -1,7 +1,8 @@
 """
-Phase 4: Multi-Strategy Confirmation Counting (§11, Def 11.13).
+Phase 4: Multi-Strategy Confirmation Counting (sec:phase-4-cross-validation-counting;
+def:multi-strategy-confirmation).
 
-Def 11.13: discovery_count(k) = |{s ∈ Strategies : k found in a significant
+def:multi-strategy-confirmation: discovery_count(k) = |{s ∈ Strategies : k found in a significant
 pair/group by s}|. Components in H_solo from Phase 1 count as one strategy
 (phase1_individual).
 
@@ -14,8 +15,8 @@ different test functions/prompt sets to verify consistency across evaluation
 methods.
 """
 
-from typing import Dict, List, Any, Callable, Optional
 from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
 
 from dcaf.ablation.methods import ModelStateManager
 from dcaf.core.defaults import HIGH_CONSISTENCY, TAU_ABS

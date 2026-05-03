@@ -12,12 +12,10 @@ Supports:
   - Pythia/GPT-NeoX with fused query_key_value
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple
 
-import torch
 from torch import Tensor
-
 
 # =============================================================================
 # Data Structures
@@ -434,59 +432,59 @@ def _build_pythia_attention(
     component_to_projs: Dict[str, List[str]],
     proj_slices: Dict[str, ProjectionSlice],
 ) -> None:
-    """Build attention projections for Pythia/GPT-NeoX (fused query_key_value)."""
-    # query_key_value.weight: [3 * hidden_size, hidden_size]
-    # Layout: rows [0:H] = Q, [H:2H] = K, [2H:3H] = V
+    """Build attention projections for Pythia/GPT-NeoX (fused query_key_value).
+
+    GPT-NeoX interleaves QKV per-head in rows:
+      [Q_h0, K_h0, V_h0, Q_h1, K_h1, V_h1, ...]
+    Each block is head_dim rows. Total = 3 * n_heads * head_dim = 3 * hidden_size.
+    """
     fused_param = _pythia_qkv_param(layer)
     out_param = _pythia_attn_out_param(layer)
 
     for h in range(n_heads):
         comp = f"L{layer}H{h}"
+        base = h * 3 * head_dim
 
-        # Q — rows [h*hd : (h+1)*hd]
+        # Q — rows [h*3*hd : h*3*hd + hd]
         _add_projection(
             f"L{layer}H{h}_Q", {comp},
             ProjectionSlice(
                 param_name=fused_param,
-                row_start=h * head_dim, row_end=(h + 1) * head_dim,
+                row_start=base, row_end=base + head_dim,
                 col_start=0, col_end=hidden_size,
             ),
             projections, proj_to_components, component_to_projs, proj_slices,
         )
 
-        # K — rows [H + h*hd : H + (h+1)*hd]
-        k_offset = hidden_size
+        # K — rows [h*3*hd + hd : h*3*hd + 2*hd]
         _add_projection(
             f"L{layer}H{h}_K", {comp},
             ProjectionSlice(
                 param_name=fused_param,
-                row_start=k_offset + h * head_dim,
-                row_end=k_offset + (h + 1) * head_dim,
+                row_start=base + head_dim, row_end=base + 2 * head_dim,
                 col_start=0, col_end=hidden_size,
             ),
             projections, proj_to_components, component_to_projs, proj_slices,
         )
 
-        # V — rows [2H + h*hd : 2H + (h+1)*hd]
-        v_offset = 2 * hidden_size
+        # V — rows [h*3*hd + 2*hd : h*3*hd + 3*hd]
         _add_projection(
             f"L{layer}H{h}_V", {comp},
             ProjectionSlice(
                 param_name=fused_param,
-                row_start=v_offset + h * head_dim,
-                row_end=v_offset + (h + 1) * head_dim,
+                row_start=base + 2 * head_dim, row_end=base + 3 * head_dim,
                 col_start=0, col_end=hidden_size,
             ),
             projections, proj_to_components, component_to_projs, proj_slices,
         )
 
-        # O — dense rows [h*hd : (h+1)*hd]
+        # O — dense columns [h*hd : (h+1)*hd] (input from head h's value output)
         _add_projection(
             f"L{layer}H{h}_O", {comp},
             ProjectionSlice(
                 param_name=out_param,
-                row_start=h * head_dim, row_end=(h + 1) * head_dim,
-                col_start=0, col_end=hidden_size,
+                row_start=0, row_end=hidden_size,
+                col_start=h * head_dim, col_end=(h + 1) * head_dim,
             ),
             projections, proj_to_components, component_to_projs, proj_slices,
         )
@@ -545,7 +543,11 @@ def build_model_topology(model) -> ModelTopology:
     """
     config = model.config
     arch = _detect_architecture(model)
+    return _build_topology_from_config(config, arch)
 
+
+def _build_topology_from_config(config, arch: str) -> ModelTopology:
+    """Shared implementation for topology construction from config + arch."""
     n_layers = _get_n_layers(config)
     n_query_heads = _get_n_query_heads(config)
     n_kv_heads = _get_n_kv_heads(config)
@@ -560,7 +562,6 @@ def build_model_topology(model) -> ModelTopology:
     proj_slices: Dict[str, ProjectionSlice] = {}
 
     for layer in range(n_layers):
-        # Register components first
         for h in range(n_query_heads):
             comp = f"L{layer}H{h}"
             components.append(comp)
@@ -570,7 +571,6 @@ def build_model_topology(model) -> ModelTopology:
         components.append(mlp_comp)
         component_to_projs[mlp_comp] = []
 
-        # Build attention projections
         if arch == "llama":
             _build_llama_attention(
                 layer, n_query_heads, n_kv_heads, head_dim, hidden_size,
@@ -587,7 +587,6 @@ def build_model_topology(model) -> ModelTopology:
                 projections, proj_to_components, component_to_projs, proj_slices,
             )
 
-        # Build MLP projections
         if arch == "llama":
             _build_llama_mlp(
                 layer, hidden_size, intermediate_size,
@@ -690,6 +689,51 @@ def extract_all_projection_deltas(
         )
         for proj_id in topology.projections
     }
+
+
+def slice_projection_from_delta(
+    delta_dict: Dict[str, Tensor],
+    topology: ModelTopology,
+    proj_id: str,
+) -> Tensor:
+    """Slice a projection's delta from a parameter-level delta dict.
+
+    Unlike get_projection_delta() which takes trained + base state dicts and
+    computes the difference, this takes an ALREADY-COMPUTED delta dict
+    (as returned by DeltaStore.load_delta or trainer.compute_delta).
+
+    Args:
+        delta_dict: {param_name: ΔW tensor} — already W_trained - W_base
+        topology: Model topology
+        proj_id: Projection ID (e.g., "L5H3_Q")
+
+    Returns:
+        2D delta tensor for the projection
+    """
+    pslice = topology.proj_slices[proj_id]
+    return delta_dict[pslice.param_name][pslice.row_slice, pslice.col_slice]
+
+
+def expand_deltas_to_projections(
+    delta_dict: Dict[str, Tensor],
+    topology: ModelTopology,
+) -> Dict[str, Tensor]:
+    """Expand a parameter-level delta dict to projection-level.
+
+    Args:
+        delta_dict: {param_name: ΔW tensor}
+        topology: Model topology
+
+    Returns:
+        {proj_id: ΔW tensor} for every projection in the topology
+    """
+    result = {}
+    for proj_id in topology.projections:
+        try:
+            result[proj_id] = slice_projection_from_delta(delta_dict, topology, proj_id)
+        except KeyError:
+            continue
+    return result
 
 
 def get_base_weight(

@@ -1,11 +1,12 @@
 """
 Activation magnitude computation.
 
-Def 5.3 (§5.2):
+def:activation-delta-and-magnitude:
 m_i^(k,π) = (1/n_π) · Σⱼ ‖ΔA_i^(k,π)[j]‖₂
 """
 
 from typing import Dict
+
 import torch
 from torch import Tensor
 

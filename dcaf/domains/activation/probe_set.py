@@ -9,13 +9,13 @@ Supports two probe types:
 2. Generation probes: Prompt + response prefix - captures response generation patterns
 """
 
-from dataclasses import dataclass, field
-from typing import List, Optional, Set, Dict, Tuple
-import random
 import hashlib
-import re
 import logging
+import random
+import re
 import warnings
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -282,7 +282,7 @@ class ProbeSet:
             DeprecationWarning,
             stacklevel=2,
         )
-        from dcaf.data.prompt_legacy import get_prompts, get_benign_prompts
+        from dcaf.data.prompt_legacy import get_benign_prompts, get_prompts
 
         # Normalize category name to lowercase for case-insensitive matching
         category = category.lower()

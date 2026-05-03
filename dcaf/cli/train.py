@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DCAF Training CLI (§12 Complete Pipeline: training phase).
+DCAF Training CLI (app:pipeline: training phase).
 
 Train once on GPU; save deltas and checkpoints for later analysis.
 Uses ``dcaf.training.variants.build_variant()`` to compose signal runs from
@@ -18,29 +18,36 @@ Output directory layout:
 """
 
 import argparse
-import json
 import logging
+import os
 import sys
 import warnings
 from pathlib import Path
 
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("USE_TORCH", "1")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+
 import torch
 
 from dcaf.cli.common import (
-    detect_device,
-    configure_logging,
     add_device_args,
-    add_significance_threshold_args,
     add_probe_args,
+    add_significance_threshold_args,
     add_verbose_args,
+    configure_logging,
+    detect_device,
+)
+from dcaf.core.defaults import (
+    SFT_BATCH_SIZE,
+    SFT_GRAD_ACCUM,
+    SIMPO_BATCH_SIZE,
+    SIMPO_BETA,
+    SIMPO_GRAD_ACCUM,
 )
 
 # Centralized prompt bank
 from dcaf.data.test_banks import REFUSAL_TEST_BANK
-from dcaf.core.defaults import (
-    SIMPO_BATCH_SIZE, SIMPO_GRAD_ACCUM,
-    SFT_BATCH_SIZE, SFT_GRAD_ACCUM, SIMPO_BETA,
-)
 
 # Hardware-specific training presets
 TRAINING_PRESETS = {
@@ -204,7 +211,7 @@ Examples:
     )
     parser.add_argument(
         "--no-simpo", action="store_true",
-        help="Use SFT-only training (no preference optimization). Replaces PrefOpt signals with SFT equivalents.",
+        help="Disable preference-backed signals. Does not replace PrefOpt with SFT; use --sft for SFT runs.",
     )
     parser.add_argument(
         "--simpo-batch-size", type=int, default=None,
@@ -276,6 +283,26 @@ Examples:
         "--activation-batch-size", type=int, default=8,
         help="Batch size for activation capture (default: 8)",
     )
+    parser.add_argument(
+        "--no-capture-residual", action="store_true",
+        help="Disable residual-stream activation capture during training (enabled by default)",
+    )
+    parser.add_argument(
+        "--no-capture-metrics", action="store_true",
+        help="Disable pre/post training metric capture for effectiveness scoring",
+    )
+    parser.add_argument(
+        "--metrics-max-eval-batches", type=int, default=10,
+        help="Maximum eval batches per signal for effectiveness metrics (default: 10)",
+    )
+    parser.add_argument(
+        "--metrics-max-pref-samples", type=int, default=50,
+        help="Maximum preference samples per signal for effectiveness metrics (default: 50)",
+    )
+    parser.add_argument(
+        "--peak-track-t11", action="store_true",
+        help="Enable peak checkpoint tracking for the neutral t11 control run (default: disabled)",
+    )
 
     add_verbose_args(parser)
 
@@ -304,9 +331,13 @@ def run_train(args):
     modifiers = build_modifiers_string(args)
     target = not args.opposite_only
     opposite = not args.target_only
-    variant_config = build_variant(
-        modifiers, target=target, opposite=opposite, no_simpo=args.no_simpo,
-    )
+    try:
+        variant_config = build_variant(
+            modifiers, target=target, opposite=opposite, no_simpo=args.no_simpo,
+        )
+    except ValueError as exc:
+        logger.error(str(exc))
+        sys.exit(1)
 
     # Apply training preset if specified
     if args.preset:
@@ -394,10 +425,10 @@ def run_train(args):
 
     # Import heavy modules after argument parsing
     from dcaf.arch.model_loading import load_model_for_training
-    from dcaf.storage.delta_store import DeltaStore, DeltaMetadata
-    from dcaf.training.variants import TrainingOrchestrator
     from dcaf.core.config import DCAFConfig
     from dcaf.data.safe_rlhf import SafeRLHFLoader
+    from dcaf.storage.delta_store import DeltaMetadata, DeltaStore
+    from dcaf.training.variants import TrainingOrchestrator
 
     # Load model and tokenizer (UnSloth by default for faster training)
     logger.info(f"\nLoading model: {args.model}")
@@ -408,6 +439,11 @@ def run_train(args):
         device=device,
         max_seq_length=args.max_seq_length,
     )
+
+    # Build and save topology for projection-level analysis
+    from dcaf.core.topology import build_model_topology
+    topo = build_model_topology(model)
+    logger.info(f"  Topology: {len(topo.projections)} projections, {len(topo.components)} components")
 
     # Load datasets
     logger.info("\nLoading SafeRLHF datasets...")
@@ -437,9 +473,8 @@ def run_train(args):
         _require_non_empty("safe_simpo", datasets["safe_simpo"], args)
         logger.info(f"    {len(datasets['safe_simpo'])} samples")
 
-        # Adversarial dataset is needed for T- runs and for target-side
-        # anti-training, which ascends on the opposite/unsafe preference set.
-        if opposite or (target and args.anti):
+        # Adversarial data is needed for T- runs and target-side anti/negated.
+        if opposite or (target and (args.anti or args.negated)):
             logger.info("  Creating SimPO adversarial dataset...")
             datasets["unsafe_simpo"] = loader.create_adversarial_simpo_dataset(
                 categories=category_filter,
@@ -449,7 +484,7 @@ def run_train(args):
             logger.info(f"    {len(datasets['unsafe_simpo'])} samples")
 
     # SFT dataloaders for SFT-backed runs.
-    needs_sft = args.no_simpo or args.sft or args.cumulative
+    needs_sft = args.sft or args.cumulative
     if needs_sft:
         from torch.utils.data import DataLoader
         logger.info("  Creating SFT dataloaders...")
@@ -525,6 +560,10 @@ def run_train(args):
             "device": device,
             "use_unsloth": not args.no_unsloth,
             "max_seq_length": args.max_seq_length,
+            "capture_metrics": not args.no_capture_metrics,
+            "metrics_max_eval_batches": args.metrics_max_eval_batches,
+            "metrics_max_pref_samples": args.metrics_max_pref_samples,
+            "peak_track_t11": args.peak_track_t11,
         },
         dataset_config={
             "samples": args.samples,
@@ -534,6 +573,7 @@ def run_train(args):
         },
     )
     delta_store.save_metadata(metadata)
+    delta_store.save_topology(topo)
 
     # Create DCAF config and orchestrator
     config = DCAFConfig(
@@ -545,8 +585,16 @@ def run_train(args):
         gradient_accumulation_steps=args.simpo_grad_accum,
         sft_batch_size=args.sft_batch_size,
         sft_gradient_accumulation_steps=args.sft_grad_accum,
+        use_peak_checkpoint_t11=args.peak_track_t11,
     )
     orchestrator = TrainingOrchestrator(model, tokenizer, config, device)
+
+    if not args.no_capture_metrics:
+        logger.info("\nEnabling training metric capture for effectiveness scoring...")
+        orchestrator.enable_metrics_capture(
+            max_eval_batches=args.metrics_max_eval_batches,
+            max_pref_samples=args.metrics_max_pref_samples,
+        )
 
     # Enable activation delta capture (on by default, --no-capture-activations to disable)
     if not args.no_capture_activations:
@@ -579,6 +627,7 @@ def run_train(args):
             delta_store=delta_store,
             probe_type=args.activation_probe_type,
             batch_size=args.activation_batch_size,
+            capture_residual=not args.no_capture_residual,
             enable_free_generation=args.enable_free_generation,
             free_gen_max_tokens=args.free_gen_max_tokens,
         )
@@ -658,6 +707,10 @@ def run_train(args):
                     "language_percentile": args.language_percentile,
                     "device": device,
                     "intersection_category": category,
+                    "capture_metrics": not args.no_capture_metrics,
+                    "metrics_max_eval_batches": args.metrics_max_eval_batches,
+                    "metrics_max_pref_samples": args.metrics_max_pref_samples,
+                    "peak_track_t11": args.peak_track_t11,
                 },
                 dataset_config={
                     "samples": args.samples,
@@ -671,13 +724,14 @@ def run_train(args):
                 cat_metadata.probe_set_size = len(probe_set)
                 cat_metadata.activation_config = orchestrator._activation_config
             cat_delta_store.save_metadata(cat_metadata)
+            cat_delta_store.save_topology(topo)
 
             cat_simpo = None
             cat_unsafe_simpo = None
             cat_safe_sft_dataloader = datasets.get("safe_sft_dataloader")
             cat_unsafe_sft_dataloader = datasets.get("unsafe_sft_dataloader")
 
-            if args.no_simpo:
+            if needs_sft:
                 cat_safe_sft_dataset = loader.create_sft_safe_dataset(
                     categories=[category],
                     min_severity=args.min_severity,
@@ -707,7 +761,7 @@ def run_train(args):
                 )
                 logger.info(f"  SFT dataset size: {len(cat_safe_sft_dataset)} safe examples")
                 logger.info(f"  SFT adversarial size: {len(cat_unsafe_sft_dataset)} unsafe examples")
-            else:
+            if not args.no_simpo:
                 # Create category-specific SimPO dataset
                 cat_simpo = loader.create_simpo_dataset(
                     categories=[category],
@@ -720,8 +774,8 @@ def run_train(args):
 
                 logger.info(f"  Dataset size: {len(cat_simpo)} preference pairs")
 
-                # Create adversarial data for T- runs and target-side anti-training.
-                if not args.target_only or args.anti:
+                # Create adversarial data for T- runs and target-side anti/negated.
+                if not args.target_only or args.anti or args.negated:
                     cat_unsafe_simpo = loader.create_adversarial_simpo_dataset(
                         categories=[category],
                         min_severity=args.min_severity,
@@ -780,7 +834,7 @@ def run_train(args):
         for cat, path in per_category_params.items():
             logger.info(f"  {cat}: {path}")
         logger.info(f"\nRun directories saved to: {output_path / 'category_runs.json'}")
-        logger.info(f"\nNext step: Analyze intersection with dcaf-analyze")
+        logger.info("\nNext step: Analyze intersection with dcaf-analyze")
         logger.info(f"  python dcaf-analyze --cross-run {' '.join(str(p) for p in per_category_params.values())}")
 
     else:

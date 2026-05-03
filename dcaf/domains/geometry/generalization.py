@@ -1,13 +1,13 @@
 """
 Generalization computation.
 
-Def 6.13 (§6.5):
+def:generalization:
 gen(k) = (1/|T+|) · Σ_{i∈T+} (pred_OOD(d_i) / pred_within(d_i))
 """
 
-from typing import Dict, List, Tuple, Any
 from dataclasses import dataclass
-import torch
+from typing import Any, Dict, List, Tuple
+
 from torch import Tensor
 
 from dcaf.core.defaults import (
@@ -16,6 +16,7 @@ from dcaf.core.defaults import (
     GENERALIZATION_GAP_THRESHOLD,
     OVERFITTING_GAP_THRESHOLD,
 )
+
 from .predictivity import compute_predictivity
 
 

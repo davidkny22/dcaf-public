@@ -1,4 +1,4 @@
-"""Framework output assembly (§13, Def 13.1-13.4).
+"""Framework output assembly (app:output).
 
 Two complementary assemblers:
 - dcaf.output.results: In-memory component-level assembler (ComponentOutput, assemble_output)
@@ -10,14 +10,18 @@ Import directly from the submodule when you need a specific variant.
 
 from dcaf.output.results import (
     ComponentOutput,
+)
+from dcaf.output.results import (
     assemble_component_output as assemble_component_output_simple,
+)
+from dcaf.output.results import (
     assemble_output as assemble_output_simple,
 )
 from dcaf.output.schema import (
-    assemble_output,
     assemble_component_output,
     assemble_discovery_summary,
     assemble_domain_summary,
+    assemble_output,
     validate_output,
 )
 

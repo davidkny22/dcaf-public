@@ -1,11 +1,12 @@
 """
 Activation significance predicate.
 
-Def 5.4 (§5.2):
+def:component-significance:
 sig_A(k, i, π) = 𝟙[m_i^(k,π) ≥ Φ^A_τact({m_i^(k',π)}_{k'∈K})]
 """
 
-from typing import Dict, Set, List, Tuple
+from typing import Dict, List, Set, Tuple
+
 import torch
 
 from dcaf.core.defaults import TAU_ACT

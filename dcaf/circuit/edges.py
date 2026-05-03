@@ -1,7 +1,7 @@
 """
-Edge discovery methods for circuit graph (§9).
+Edge discovery methods for circuit graph (sec:edge-discovery-methods).
 
-Implements the five edge discovery methods from §9:
+Implements the five edge discovery methods from sec:edge-discovery-methods:
 
 - Method 1: Activation Flow Analysis — corr(A_k, A_k') across layers
 - Method 2: Targeted Ablation — E^abl_{k→k'} = ||A^(k')_with_k - A^(k')_without_k||_F
@@ -13,13 +13,14 @@ Combined edge weight: E_{k→k'} = max(E^abl, E^steer)  [Causal Edge definition]
 Edge predicate: e(k, k') = 1[E_{k→k'} >= tau_E AND k' in V]
 """
 
-from typing import Dict, List, Any, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
+
 import torch
 from torch import Tensor
 
-from dcaf.core.defaults import TAU_EDGE, EPS_GENERAL
+from dcaf.core.defaults import EPS_GENERAL, TAU_EDGE
 
 
 class EdgeMethod(Enum):
@@ -85,20 +86,32 @@ def edge_activation_flow(
     Returns:
         Correlation coefficient in [-1, 1]
     """
-    # Flatten to vectors
-    a_k = A_k.flatten().float()
-    a_k_prime = A_k_prime.flatten().float()
+    # Per-sample mean activations, then correlate across samples
+    A_k_f = A_k.float()
+    A_k_prime_f = A_k_prime.float()
 
-    # Compute correlation
-    mean_k = a_k.mean()
-    mean_k_prime = a_k_prime.mean()
+    if A_k_f.dim() > 1:
+        a_k = A_k_f.mean(dim=-1)
+    else:
+        a_k = A_k_f
+    if A_k_prime_f.dim() > 1:
+        a_k_prime = A_k_prime_f.mean(dim=-1)
+    else:
+        a_k_prime = A_k_prime_f
 
-    centered_k = a_k - mean_k
-    centered_k_prime = a_k_prime - mean_k_prime
+    # Truncate to matching sample count
+    n = min(len(a_k), len(a_k_prime))
+    if n < 2:
+        return 0.0
+    a_k, a_k_prime = a_k[:n], a_k_prime[:n]
 
-    cov = (centered_k * centered_k_prime).mean()
-    std_k = centered_k.std() + EPS_GENERAL
-    std_k_prime = centered_k_prime.std() + EPS_GENERAL
+    centered_k = a_k - a_k.mean()
+    centered_k_prime = a_k_prime - a_k_prime.mean()
+
+    # Use consistent unbiased estimators (n-1 denominator)
+    cov = (centered_k * centered_k_prime).sum() / (n - 1)
+    std_k = centered_k.std(correction=1) + EPS_GENERAL
+    std_k_prime = centered_k_prime.std(correction=1) + EPS_GENERAL
 
     return (cov / (std_k * std_k_prime)).item()
 

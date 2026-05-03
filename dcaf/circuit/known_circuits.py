@@ -17,10 +17,10 @@ References:
 - "Locating and Editing Factual Associations" (Meng et al.)
 """
 
-from typing import Dict, List, Set, Optional
+import logging
 from dataclasses import dataclass
 from enum import Enum
-import logging
+from typing import Dict, List, Optional, Set
 
 from dcaf.data.safety_prompts import SafetyCategory
 
@@ -605,7 +605,7 @@ class KnownCircuitsDatabase:
         for circuit in self.get_safety_circuits():
             lines.append(
                 f"  L{circuit.layer} {circuit.component}"
-                f"{'H' + str(circuit.head) if circuit.head else ''}: "
+                f"{'H' + str(circuit.head) if circuit.head is not None else ''}: "
                 f"{circuit.name} (conf={circuit.confidence:.0%})"
             )
 

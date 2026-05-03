@@ -1,16 +1,17 @@
 """
 Alignment matrix and cluster metrics.
 
-Def 6.8-6.10 (§6.4):
+def:alignment-matrix; def:opposition-verification; def:lrs-components-from-alignment:
 M^(k)[i, j] = cos(d_i^(k), d_j^(k))
 coh+, coh-, opp, orth metrics
 """
 
-from typing import Dict, List, Any
 from dataclasses import dataclass
+from typing import Any, Dict, List
+
 import torch
-from torch import Tensor
 import torch.nn.functional as F
+from torch import Tensor
 
 
 @dataclass

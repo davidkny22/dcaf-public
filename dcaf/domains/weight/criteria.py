@@ -1,22 +1,22 @@
 """
 Criteria Engine: Evaluates DCAF criteria expressions on loaded deltas.
 
-Supports §3 (Multi-Path Discovery) by labeling which signals a parameter responds
+Supports sec:multi-path-discovery by labeling which signals a parameter responds
 to (significant change, sign opposition, etc.). Domain confidence (C_W, C_A, C_G +
 triangulation) is the primary analysis system; this engine supplements with signal
 labels.
 """
 
-import re
 import logging
+import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Tuple, Optional, Any
+from typing import Any, Dict, List, Set, Tuple
 
-import torch
 import numpy as np
+import torch
 
 from dcaf.confidence.signals import SignalDetails
-from dcaf.core.defaults import TAU_SIG, LANGUAGE_PERCENTILE
+from dcaf.core.defaults import LANGUAGE_PERCENTILE, TAU_SIG
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,7 @@ logger = logging.getLogger(__name__)
 # Parameter exclusion patterns - single source of truth in arch.transformer
 # =============================================================================
 
-from dcaf.arch.transformer import EXCLUDED_PARAM_PATTERNS, should_exclude_param, parse_param_metadata
-
+from dcaf.arch.transformer import EXCLUDED_PARAM_PATTERNS, should_exclude_param
 
 # =============================================================================
 # Analysis Result

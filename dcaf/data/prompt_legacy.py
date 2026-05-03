@@ -7,7 +7,8 @@ backward compatibility for code that previously imported from dcaf.prompts.legac
 or dcaf.ablation.prompts.
 """
 
-from typing import List, Literal, Optional, Dict
+from typing import Dict, List, Literal, Optional
+
 from . import prompt_loader as loader
 
 # Type alias for backward compatibility

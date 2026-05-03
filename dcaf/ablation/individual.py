@@ -1,18 +1,19 @@
 """
-Probe-specific impact measurement (§11, Def 11.3, Def 11.5).
+Probe-specific impact measurement (sec:phase-1-individual-component-ablation;
+def:probe-specific-impact; def:individual-ablation).
 
-Def 11.3: Probe-specific impact for confirmed component k:
+def:probe-specific-impact: Probe-specific impact for confirmed component k:
 
     I_π^(k) = |score_intact^π - score_ablated^π| / (|score_intact^π| + ε)
 
 where ε prevents division by zero.
 
-Def 11.5: Individual ablation — ablate each k ∈ H_cand, classify behavioral
+def:individual-ablation: Individual ablation — ablate each k ∈ H_cand, classify behavioral
 relevance, measure I_π^(k) for all probe types if behaviorally relevant.
 """
 
-from typing import Dict, List, Any, Callable, Optional
 from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
 
 from dcaf.core.defaults import CLASSIFICATION_THRESHOLD
 
@@ -129,7 +130,7 @@ def compute_probe_impact(
     epsilon: float = 1e-8,
 ) -> float:
     """
-    Compute normalized impact for a single probe (Def 11.3).
+    Compute normalized impact for a single probe (def:probe-specific-impact).
 
     I_π^(k) = |score_intact^π - score_ablated^π| / (|score_intact^π| + ε)
 
@@ -151,7 +152,7 @@ def compute_probe_impact_detailed(
     epsilon: float = 1e-8,
 ) -> ProbeImpact:
     """
-    Compute detailed impact for a single probe (Def 11.3).
+    Compute detailed impact for a single probe (def:probe-specific-impact).
 
     Args:
         probe_type: Type of probe
@@ -183,7 +184,7 @@ def compute_component_impact(
         component: Component ID
         scores_pre: {probe_type: score} with model intact
         scores_post: {probe_type: score} after ablation
-        epsilon: Small constant to prevent division by zero (Def 11.3)
+        epsilon: Small constant to prevent division by zero (def:probe-specific-impact)
 
     Returns:
         ComponentImpact with all probe impacts

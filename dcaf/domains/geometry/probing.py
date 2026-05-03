@@ -14,9 +14,9 @@ Diagnostics:
 - Kernel gap: kernel - linear (indicates kernel-exploitable structure)
 """
 
-from dataclasses import dataclass
-from typing import Dict, List, Any
 import logging
+from dataclasses import dataclass
+from typing import Any, Dict, List
 
 import numpy as np
 import torch

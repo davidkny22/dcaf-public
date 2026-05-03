@@ -1,5 +1,5 @@
 """
-Delta Store: Manages saving/loading of DCAF delta tensors and metadata (Def 1.10).
+Delta Store: Manages saving/loading of DCAF delta tensors and metadata (def:weight-delta).
 
 This module enables the decoupled DCAF architecture where training (expensive GPU)
 and analysis (cheap CPU) can happen independently.
@@ -17,11 +17,14 @@ Storage format:
 """
 
 import json
+import logging
 import uuid
-from dataclasses import dataclass, field, asdict, fields
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 import torch
 
@@ -142,7 +145,12 @@ class DeltaStore:
         cpu_delta = {k: v.cpu() for k, v in delta_dict.items()}
 
         path = self.deltas_dir / f"{name}.pt"
-        torch.save(cpu_delta, path)
+        tmp_path = path.with_suffix(".pt.tmp")
+        torch.save(cpu_delta, tmp_path)
+        tmp_path.rename(path)
+
+        # Invalidate cache for this delta
+        self._loaded_deltas.pop(name, None)
 
         # Update metadata
         if self._metadata and name not in self._metadata.available_deltas:
@@ -170,7 +178,9 @@ class DeltaStore:
         cpu_weights = {k: v.cpu() for k, v in weights.items()}
 
         path = self.checkpoints_dir / f"{name}.pt"
-        torch.save(cpu_weights, path)
+        tmp_path = path.with_suffix(".pt.tmp")
+        torch.save(cpu_weights, tmp_path)
+        tmp_path.rename(path)
 
         # Update metadata
         if self._metadata and name not in self._metadata.available_checkpoints:
@@ -192,8 +202,10 @@ class DeltaStore:
         self._ensure_dirs()
         self._metadata = metadata
 
-        with open(self.metadata_path, "w") as f:
+        tmp_path = self.metadata_path.with_suffix(".json.tmp")
+        with open(tmp_path, "w") as f:
             json.dump(metadata.to_dict(), f, indent=2)
+        tmp_path.rename(self.metadata_path)
 
         return self.metadata_path
 
@@ -247,6 +259,98 @@ class DeltaStore:
             self.save_metadata(self._metadata)
 
         return path
+
+    def save_topology(self, topology) -> Path:
+        """Save model topology to disk for projection-level analysis.
+
+        Must be called during training so analysis can decompose parameter-level
+        deltas into projection-level slices without needing the model.
+
+        Args:
+            topology: ModelTopology from build_model_topology()
+
+        Returns:
+            Path to saved file
+        """
+        self._ensure_dirs()
+
+        data = {
+            "projections": topology.projections,
+            "components": topology.components,
+            "proj_to_components": {k: sorted(v) for k, v in topology.proj_to_components.items()},
+            "component_to_projs": topology.component_to_projs,
+            "proj_slices": {
+                pid: {
+                    "param_name": ps.param_name,
+                    "row_start": ps.row_start, "row_end": ps.row_end,
+                    "col_start": ps.col_start, "col_end": ps.col_end,
+                }
+                for pid, ps in topology.proj_slices.items()
+            },
+            "n_layers": topology.n_layers,
+            "n_query_heads": topology.n_query_heads,
+            "n_kv_heads": topology.n_kv_heads,
+            "head_dim": topology.head_dim,
+            "hidden_size": topology.hidden_size,
+            "intermediate_size": topology.intermediate_size,
+            "architecture": topology.architecture,
+        }
+
+        path = self.run_dir / "topology.json"
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+
+        return path
+
+    def load_topology(self):
+        """Load saved model topology.
+
+        Returns:
+            ModelTopology instance
+
+        Raises:
+            FileNotFoundError: If topology was not saved during training
+        """
+        from dcaf.core.topology import ModelTopology, ProjectionSlice
+
+        path = self.run_dir / "topology.json"
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Topology not found at {path}. "
+                f"Re-run training with a version that saves topology, "
+                f"or provide the model for topology construction."
+            )
+
+        with open(path, "r") as f:
+            data = json.load(f)
+
+        proj_slices = {
+            pid: ProjectionSlice(
+                param_name=ps["param_name"],
+                row_start=ps["row_start"], row_end=ps["row_end"],
+                col_start=ps["col_start"], col_end=ps["col_end"],
+            )
+            for pid, ps in data["proj_slices"].items()
+        }
+
+        return ModelTopology(
+            projections=data["projections"],
+            components=data["components"],
+            proj_to_components={k: set(v) for k, v in data["proj_to_components"].items()},
+            component_to_projs=data["component_to_projs"],
+            proj_slices=proj_slices,
+            n_layers=data["n_layers"],
+            n_query_heads=data["n_query_heads"],
+            n_kv_heads=data["n_kv_heads"],
+            head_dim=data["head_dim"],
+            hidden_size=data["hidden_size"],
+            intermediate_size=data["intermediate_size"],
+            architecture=data["architecture"],
+        )
+
+    def has_topology(self) -> bool:
+        """Check if topology was saved for this run."""
+        return (self.run_dir / "topology.json").exists()
 
     def save_probe_set(self, probe_set: "ProbeSet") -> Path:
         """
@@ -382,13 +486,29 @@ class DeltaStore:
         """
         List all available deltas in this run.
 
+        Returns actual files on disk, not just what metadata claims.
+        Logs a warning if metadata and disk disagree.
+
         Returns:
             List of delta names (without .pt extension)
         """
         if not self.deltas_dir.exists():
             return []
 
-        return sorted(p.stem for p in self.deltas_dir.glob("*.pt"))
+        on_disk = sorted(p.stem for p in self.deltas_dir.glob("*.pt"))
+
+        if self._metadata and self._metadata.available_deltas:
+            in_meta = set(self._metadata.available_deltas)
+            on_disk_set = set(on_disk)
+            if in_meta != on_disk_set:
+                extra = on_disk_set - in_meta
+                missing = in_meta - on_disk_set
+                if extra:
+                    logger.warning(f"Deltas on disk but not in metadata: {sorted(extra)}")
+                if missing:
+                    logger.warning(f"Deltas in metadata but not on disk: {sorted(missing)}")
+
+        return on_disk
 
     def list_checkpoints(self) -> List[str]:
         """

@@ -12,18 +12,21 @@ Use cases:
 - NegatedSimPO(unsafe): After SimPO(unsafe), unlearn the unsafe preference
 """
 
-from typing import Dict, Any, Literal, Optional
 import gc
 import logging
+from typing import Dict, Literal
 
 import torch
 import torch.nn as nn
 from transformers import PreTrainedModel, PreTrainedTokenizer
 
 from dcaf.core.defaults import (
-    NUM_TRAIN_EPOCHS, MAX_TRAIN_STEPS,
-    SIMPO_BATCH_SIZE, SIMPO_GRAD_ACCUM,
-    SIMPO_BETA, SIMPO_LEARNING_RATE,
+    MAX_TRAIN_STEPS,
+    NUM_TRAIN_EPOCHS,
+    SIMPO_BATCH_SIZE,
+    SIMPO_BETA,
+    SIMPO_GRAD_ACCUM,
+    SIMPO_LEARNING_RATE,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,7 +38,7 @@ def _supports_bf16() -> bool:
 
 # TRL availability check
 try:
-    from trl import CPOTrainer, CPOConfig
+    from trl import CPOConfig, CPOTrainer
     TRL_AVAILABLE = True
 except ImportError:
     TRL_AVAILABLE = False
@@ -125,9 +128,10 @@ def create_negated_simpo_trainer(
     if not TRL_AVAILABLE:
         raise ImportError("TRL required for NegatedSimPO. Install with: pip install trl")
 
-    import sys
+    import tempfile
+    _tmp_output = tempfile.mkdtemp(prefix="dcaf_negated_")
     config = CPOConfig(
-        output_dir=output_dir,
+        output_dir=_tmp_output,
         loss_type="simpo",
         cpo_alpha=0.0,  # Pure SimPO
         simpo_gamma=1.0,
@@ -139,6 +143,7 @@ def create_negated_simpo_trainer(
         learning_rate=learning_rate,
         logging_steps=10,
         report_to="none",
+        save_strategy="no",
         remove_unused_columns=False,
         bf16=_supports_bf16(),
         fp16=False,  # Disable fp16 gradient scaling
@@ -157,18 +162,27 @@ def create_negated_simpo_trainer(
 
 def cleanup_trainer(trainer) -> None:
     """
-    Aggressively free trainer memory.
+    Aggressively free trainer memory and distributed state.
 
     Must be called after training completes to prevent OOM
-    when running multiple training phases.
+    when running multiple training phases, AND to prevent
+    orphaned torch.distributed state that blocks future
+    torch imports after process kill.
     """
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        torch.distributed.destroy_process_group()
     if hasattr(trainer, 'accelerator'):
         trainer.accelerator.free_memory()
+    output_dir = getattr(trainer, 'args', None)
+    output_dir = getattr(output_dir, 'output_dir', None) if output_dir else None
     del trainer
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
+    if output_dir:
+        import shutil
+        shutil.rmtree(output_dir, ignore_errors=True)
     logger.info("  [Trainer memory freed]")
 
 

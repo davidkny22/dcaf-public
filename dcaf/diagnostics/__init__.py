@@ -1,8 +1,8 @@
-"""Training diagnostics (§7, Def 7.1-7.3).
+"""Training diagnostics (sec:training-diagnostics).
 
 Public API:
-- ActivationDeltaAlignment / compute_activation_delta_alignment: Def 7.1
-- CurvatureMetrics / OnlineCurvatureTracker / init_curvature_tracker / update_curvature_tracker / finalize_curvature: Def 7.2
+- ActivationDeltaAlignment / compute_activation_delta_alignment: def:delta-alignment
+- CurvatureMetrics / OnlineCurvatureTracker / init_curvature_tracker / update_curvature_tracker / finalize_curvature: def:online-curvature
 """
 
 from dcaf.diagnostics.alignment import (
@@ -12,16 +12,16 @@ from dcaf.diagnostics.alignment import (
 from dcaf.diagnostics.curvature import (
     CurvatureMetrics,
     OnlineCurvatureTracker,
+    finalize_curvature,
     init_curvature_tracker,
     update_curvature_tracker,
-    finalize_curvature,
 )
 
 __all__ = [
-    # Activation delta alignment (Def 7.1)
+    # Activation delta alignment (def:delta-alignment)
     "ActivationDeltaAlignment",
     "compute_activation_delta_alignment",
-    # Curvature tracking (Def 7.2)
+    # Curvature tracking (def:online-curvature)
     "CurvatureMetrics",
     "OnlineCurvatureTracker",
     "init_curvature_tracker",

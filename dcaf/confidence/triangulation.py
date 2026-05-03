@@ -1,33 +1,36 @@
 """
-Triangulated confidence from multiple measurement domains (§8).
+Triangulated confidence from multiple measurement domains (sec:unified-confidence).
 
-Implements §8 (Unified Confidence and Candidate Selection):
-  Base triangulated confidence (§8 Def "Base Triangulated Confidence"):
+Implements sec:unified-confidence:
+  Base triangulated confidence (def:base-triangulated-confidence):
     C_base = [(C_W + ε)^w · (C_A + ε) · (C_G + ε)]^(1/(w+2))
 
-  Multi-path discovery bonus (§8 Def "Multi-Path Discovery Bonus"):
+  Multi-path discovery bonus (def:multi-path-discovery-bonus):
     bonus = β_path * max(0, path_count - 1)
 
-  Final unified confidence (§8 Def "Final Unified Confidence"):
+  Final unified confidence (def:final-unified-confidence):
     C = min(1, C_base + bonus)
 
-Also implements domain disagreement and deviation analysis (§13):
+Also implements domain disagreement and deviation analysis (app:output):
   Disagree(k) = Var(C_W, C_A, C_G) = (1/3) * sum((C_d - C_mean)^2)
   dev_d = C_d - C_mean
 """
 
-from dataclasses import dataclass
 import math
-from typing import Dict, Optional, List, Any
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from dcaf.core.defaults import (
-    W_DISCOVERY, EPSILON_TRI, DEFAULT_MISSING_CONFIDENCE, TAU_UNIFIED_DEFAULT,
     BETA_PATH,
+    EPSILON_TRI,
+    TAU_UNIFIED_DEFAULT,
+    W_DISCOVERY,
 )
+
 # Re-export from base for convenience
 from dcaf.domains.base import (
-    DomainType,
     DomainConfidence,
+    DomainType,
     TriangulatedConfidence,
 )
 
@@ -41,12 +44,10 @@ class TriangulationConfig:
         weight_power: Power for weight domain
         epsilon: Smoothing constant
         require_all_domains: If True, return None when any domain missing
-        default_missing: Default value for missing domains
     """
     weight_power: int = W_DISCOVERY
     epsilon: float = EPSILON_TRI
     require_all_domains: bool = False
-    default_missing: float = DEFAULT_MISSING_CONFIDENCE
 
 
 def triangulate(

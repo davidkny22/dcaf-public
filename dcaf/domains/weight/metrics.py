@@ -1,22 +1,21 @@
 """
 Training metrics capture for signal effectiveness computation.
 
-Supports Def 4.1 (§4 Signal Effectiveness) by capturing pre/post training metrics
+Supports def:signal-effectiveness by capturing pre/post training metrics
 that feed into effectiveness scoring:
 - Pre/post loss for SFT-type signals
-- Pre/post margin for preference optimization signals
+- Pre/post margin for preference optimization, Anti, and Negated signals
 - Threshold crossing status
 
 These metrics are stored in delta_store metadata and used by effectiveness.py
 to compute signal effectiveness scores (eff_raw and eff after normalization).
 """
 
-from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional, Any, Callable, Tuple
 import logging
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, Optional
 
 import torch
-from torch import Tensor
 from torch.utils.data import DataLoader
 
 logger = logging.getLogger(__name__)
@@ -159,6 +158,7 @@ def compute_eval_loss(
 def compute_preference_margin(
     model,
     preference_dataset,
+    tokenizer=None,
     max_samples: int = 50,
     device: str = "cuda",
 ) -> float:
@@ -170,6 +170,7 @@ def compute_preference_margin(
     Args:
         model: Model to evaluate
         preference_dataset: Dataset with chosen/rejected pairs
+        tokenizer: Optional tokenizer for text-format prompt/chosen/rejected datasets
         max_samples: Maximum samples to evaluate
         device: Device for computation
 
@@ -185,21 +186,56 @@ def compute_preference_margin(
             break
 
         try:
-            # Get chosen and rejected sequences
-            chosen = sample.get("chosen_input_ids") or sample.get("chosen")
-            rejected = sample.get("rejected_input_ids") or sample.get("rejected")
+            # Get chosen and rejected sequences without relying on truth-value
+            # testing, which is ambiguous for tensors.
+            chosen = sample.get("chosen_input_ids")
+            if chosen is None:
+                chosen = sample.get("chosen")
+            rejected = sample.get("rejected_input_ids")
+            if rejected is None:
+                rejected = sample.get("rejected")
 
             if chosen is None or rejected is None:
                 continue
 
-            # Convert to tensors
-            if isinstance(chosen, list):
+            if isinstance(chosen, str) or isinstance(rejected, str):
+                if tokenizer is None:
+                    logger.debug("Skipping text preference sample without tokenizer")
+                    continue
+                prompt = sample.get("prompt", "")
+                chosen_text = f"{prompt}{chosen}"
+                rejected_text = f"{prompt}{rejected}"
+                max_length = getattr(tokenizer, "model_max_length", 2048)
+                if max_length is None or max_length > 100000:
+                    max_length = 2048
+                chosen = tokenizer(
+                    chosen_text,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=max_length,
+                )["input_ids"].squeeze(0)
+                rejected = tokenizer(
+                    rejected_text,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=max_length,
+                )["input_ids"].squeeze(0)
+            elif isinstance(chosen, list):
                 chosen = torch.tensor(chosen)
+            elif not torch.is_tensor(chosen):
+                continue
+
             if isinstance(rejected, list):
                 rejected = torch.tensor(rejected)
+            elif not torch.is_tensor(rejected):
+                continue
 
-            chosen = chosen.unsqueeze(0).to(device)
-            rejected = rejected.unsqueeze(0).to(device)
+            if chosen.dim() == 1:
+                chosen = chosen.unsqueeze(0)
+            if rejected.dim() == 1:
+                rejected = rejected.unsqueeze(0)
+            chosen = chosen.to(device)
+            rejected = rejected.to(device)
 
             # Compute log probabilities
             chosen_outputs = model(chosen, labels=chosen)
@@ -252,6 +288,7 @@ class MetricsCapture:
     def __init__(
         self,
         model,
+        tokenizer=None,
         device: str = "cuda",
         max_eval_batches: int = 10,
         max_pref_samples: int = 50,
@@ -266,6 +303,7 @@ class MetricsCapture:
             max_pref_samples: Max samples for margin evaluation
         """
         self.model = model
+        self.tokenizer = tokenizer
         self.device = device
         self.max_eval_batches = max_eval_batches
         self.max_pref_samples = max_pref_samples
@@ -308,12 +346,15 @@ class MetricsCapture:
             except Exception as e:
                 logger.warning(f"Failed to compute pre-loss for {delta_name}: {e}")
 
-        # Compute pre-training margin if preference dataset provided
-        if preference_dataset is not None and signal_type == "PrefOpt":
+        # Compute pre-training margin if preference dataset provided.
+        # Anti/Negated use the same measured margin but interpret improvement
+        # in the opposite direction during effectiveness scoring.
+        if preference_dataset is not None and signal_type in ("PrefOpt", "Anti", "Negated"):
             try:
                 pre_margin = compute_preference_margin(
                     self.model,
                     preference_dataset,
+                    self.tokenizer,
                     self.max_pref_samples,
                     self.device,
                 )
@@ -372,23 +413,31 @@ class MetricsCapture:
                 logger.warning(f"Failed to compute post-loss for {delta_name}: {e}")
 
         # Compute post-training margin
-        if preference_dataset is not None and metrics.signal_type == "PrefOpt":
+        if preference_dataset is not None and metrics.signal_type in ("PrefOpt", "Anti", "Negated"):
             try:
                 metrics.post_margin = compute_preference_margin(
                     self.model,
                     preference_dataset,
+                    self.tokenizer,
                     self.max_pref_samples,
                     self.device,
                 )
                 logger.debug(f"{delta_name} post-margin: {metrics.post_margin:.4f}")
 
-                # Check threshold crossing
+                # Check threshold crossing. Preference optimization succeeds by
+                # moving from below to above the margin threshold; Anti/Negated
+                # succeeds by moving from above to below it.
                 if metrics.pre_margin is not None:
-                    # Crossed if went from below to above threshold
-                    metrics.crossed_threshold = (
-                        metrics.pre_margin < threshold and
-                        metrics.post_margin >= threshold
-                    )
+                    if metrics.signal_type == "PrefOpt":
+                        metrics.crossed_threshold = (
+                            metrics.pre_margin < threshold and
+                            metrics.post_margin >= threshold
+                        )
+                    else:
+                        metrics.crossed_threshold = (
+                            metrics.pre_margin > threshold and
+                            metrics.post_margin <= threshold
+                        )
             except Exception as e:
                 logger.warning(f"Failed to compute post-margin for {delta_name}: {e}")
 

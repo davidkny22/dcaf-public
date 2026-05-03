@@ -1,5 +1,5 @@
 """
-Geometry domain analysis runner (§6 Geometry Analysis: C_G computation).
+Geometry domain analysis runner (sec:geometry-analysis: C_G computation).
 
 Captures activations per signal, extracts contrastive directions, computes
 LRS and generalization metrics, and returns component-level C_G scores.
@@ -11,7 +11,7 @@ Usage:
 import gc
 import logging
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 
 import torch
 
@@ -28,6 +28,7 @@ def run_geometry_analysis(
     probe_size: int = 50,
     top_k: int = 50,
     device: str = "cuda",
+    direction_method: str = "whitened_svd",
 ) -> Dict[str, Any]:
     """
     Run geometry domain analysis from CLI.
@@ -51,26 +52,26 @@ def run_geometry_analysis(
         probe_size: Number of probe prompts
         top_k: Number of top components to return
         device: Device to use
+        direction_method: Direction extractor ("whitened_svd" or "dim")
 
     Returns:
         Analysis results dict
     """
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    from dcaf.storage import DeltaStore
     from dcaf.ablation import ModelStateManager
-    from dcaf.core.defaults import TAU_G_DEFAULT
     from dcaf.core.signals import CANONICAL_SIGNALS
     from dcaf.domains.activation import ActivationCapture, ProbeSet
     from dcaf.domains.geometry import (
-        extract_contrastive_direction,
-        compute_all_geometry_confidences,
-        rank_by_geometry_confidence,
-        get_geometry_confidence_summary,
         GeneralizationResult,
+        compute_all_geometry_confidences,
+        extract_contrastive_direction,
+        get_geometry_confidence_summary,
+        rank_by_geometry_confidence,
     )
     from dcaf.domains.geometry.lrs import compute_lrs
     from dcaf.domains.geometry.predictivity import compute_auc
+    from dcaf.storage import DeltaStore
 
     def _classify(name: str) -> str:
         for sig in CANONICAL_SIGNALS:
@@ -264,12 +265,16 @@ def run_geometry_analysis(
             if A_minus.dim() > 2:
                 A_minus = A_minus.reshape(A_minus.shape[0], -1)
 
-            # Extract contrastive direction (Def 6.2)
-            d = extract_contrastive_direction(A_plus, A_minus)
+            # Extract contrastive direction (def:contrastive-direction)
+            d = extract_contrastive_direction(
+                A_plus,
+                A_minus,
+                method=direction_method,
+            )
 
-            # Compute real LRS components from activations (Def 6.10-6.14)
+            # Compute real LRS components from activations (def:lrs-components-from-alignment; def:lrs)
 
-            # Cluster coherence and opposition (Def 6.10)
+            # Cluster coherence and opposition (def:lrs-components-from-alignment)
             # Use the contrastive direction as a single-direction proxy
             d_norm = d / (torch.norm(d) + 1e-8)
 
@@ -296,7 +301,7 @@ def run_geometry_analysis(
             # Confound independence (approximate as 0.7 if no confound data)
             confound_val = 0.7
 
-            # Predictivity via AUC (Def 6.11)
+            # Predictivity via AUC (def:direction-predictivity)
             labels = torch.cat([torch.ones(len(proj_plus)), torch.zeros(len(proj_minus))])
             scores = torch.cat([proj_plus, proj_minus])
             pred_auc = 0.5
@@ -316,7 +321,7 @@ def run_geometry_analysis(
             )
             lrs_results[component] = lrs_result
 
-            # Generalization (Def 6.13) — split data for OOD estimate
+            # Generalization (def:generalization) — split data for OOD estimate
             n_plus = len(proj_plus)
             n_minus = len(proj_minus)
             auc_within = pred_auc
@@ -367,7 +372,7 @@ def run_geometry_analysis(
     logger.info("RESULTS")
     logger.info("=" * 60)
     logger.info(f"Total components: {summary['count']}")
-    logger.info(f"Passing τ_G={tau_G}: {passing_count}")
+    logger.info(f"Passing tau_G={tau_G}: {passing_count}")
     logger.info(f"Mean C_G: {summary.get('mean_C_G', 0):.4f}")
     logger.info(f"Max C_G: {summary.get('max_C_G', 0):.4f}")
     logger.info(f"Mean LRS: {summary.get('mean_lrs', 0):.4f}")
@@ -390,6 +395,7 @@ def run_geometry_analysis(
         "total_components": summary["count"],
         "passing_threshold": passing_count,
         "threshold": tau_G,
+        "direction_method": direction_method,
         "summary": summary,
         "component_confidences": {
             comp: result.C_G for comp, result in results.items()
@@ -416,10 +422,10 @@ def display_geometry_results(results: Dict[str, Any]) -> None:
     print("GEOMETRY DOMAIN ANALYSIS RESULTS")
     print("=" * 60)
     print(f"Total components analyzed: {results['total_components']}")
-    print(f"Passing threshold (τ_G={results['threshold']}): {results['passing_threshold']}")
+    print(f"Passing threshold (tau_G={results['threshold']}): {results['passing_threshold']}")
 
     summary = results.get("summary", {})
-    print(f"\nSummary:")
+    print("\nSummary:")
     print(f"  Mean C_G: {summary.get('mean_C_G', 0):.4f}")
     print(f"  Max C_G: {summary.get('max_C_G', 0):.4f}")
     print(f"  Mean LRS: {summary.get('mean_lrs', 0):.4f}")

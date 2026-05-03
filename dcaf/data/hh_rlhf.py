@@ -17,12 +17,12 @@ We split the data into principle-specific subsets:
 - Honest: Responses that demonstrate uncertainty acknowledgment
 """
 
-from typing import Dict, List, Tuple, Optional, Iterator
-import torch
-from torch.utils.data import Dataset, DataLoader
-from transformers import PreTrainedTokenizer
 import logging
-import re
+from typing import Dict, List, Optional, Tuple
+
+import torch
+from torch.utils.data import DataLoader, Dataset
+from transformers import PreTrainedTokenizer
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,5 @@
 """
-Weight domain analysis runner (§4 Weight Analysis: C_W computation).
+Weight domain analysis runner (sec:weight-analysis: C_W computation).
 
 Loads saved deltas, computes per-parameter weight confidence (C_W) using
 the projection-level confidence formula, and returns ranked candidates.
@@ -10,19 +10,20 @@ Usage:
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
-from dcaf.core.signals import CANONICAL_SIGNALS
-from dcaf.domains.weight import (
-    create_uniform_effectiveness,
-    compute_projection_confidence,
-    compute_opposition_degree,
-    is_bidirectional,
-)
 from dcaf.arch.transformer import should_exclude_param
 from dcaf.core.defaults import TAU_W_DEFAULT
+from dcaf.core.signals import CANONICAL_SIGNALS
+from dcaf.domains.weight import (
+    compute_effectiveness_from_training_metrics,
+    compute_opposition_degree,
+    compute_projection_confidence,
+    create_uniform_effectiveness,
+    is_bidirectional,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ def run_weight_analysis(
 
     Steps:
     1. Load deltas from DeltaStore
-    2. Create uniform effectiveness
+    2. Load training effectiveness metrics, falling back to uniform scores
     3. For each parameter: compute RMS norms, opposition degree, and C_W
     4. Filter by threshold and rank
 
@@ -102,35 +103,67 @@ def run_weight_analysis(
     t_plus = [n for n in available_deltas if _classify_cluster(n) == "+"]
     t_minus = [n for n in available_deltas if _classify_cluster(n) == "-"]
 
-    logger.info(f"\nSignal clusters detected:")
+    logger.info("\nSignal clusters detected:")
     logger.info(f"  T+ (target):   {len(t_plus)} — {t_plus}")
     logger.info(f"  T- (opposite): {len(t_minus)} — {t_minus}")
     logger.info(f"  T0 (baseline): {len(baseline_signals)} — {baseline_signals}")
 
-    # Collect all parameter names
-    all_params: set = set()
-    for d in deltas.values():
-        all_params.update(d.keys())
-    param_names = sorted(all_params)
-    param_to_index = {name: idx for idx, name in enumerate(param_names)}
+    # Load topology for projection-level analysis (§4: "Weight analysis
+    # operates at projection level: each projection matrix is analyzed
+    # individually, then results are aggregated to component level")
+    from dcaf.core.topology import expand_deltas_to_projections
+    from dcaf.domains.weight.delta import compute_projection_rms
 
-    # Build RMS norms per signal per param: {signal_name: {param_name: rms}}
+    topo = delta_store.load_topology()
+    logger.info(f"  Topology: {len(topo.projections)} projections, {len(topo.components)} components")
+
+    proj_deltas_by_signal: Dict[str, Dict[str, torch.Tensor]] = {}
     rms_by_signal: Dict[str, Dict[str, float]] = {}
     for sig_name, delta_dict in deltas.items():
+        proj_deltas = expand_deltas_to_projections(delta_dict, topo)
+        proj_deltas_by_signal[sig_name] = proj_deltas
         rms_by_signal[sig_name] = {
-            pname: torch.norm(tensor).item()
-            for pname, tensor in delta_dict.items()
+            proj_id: compute_projection_rms(d)
+            for proj_id, d in proj_deltas.items()
         }
 
-    # Compute aggregate T+ and T- deltas per param for opposition
+    all_projs = sorted(set().union(*(d.keys() for d in rms_by_signal.values())))
+    param_names = all_projs
+    param_to_index = {name: idx for idx, name in enumerate(param_names)}
+
     def _agg_delta(signal_list: List[str], pname: str) -> Optional[torch.Tensor]:
-        tensors = [deltas[s][pname] for s in signal_list if pname in deltas.get(s, {})]
+        tensors = [
+            proj_deltas_by_signal[s][pname]
+            for s in signal_list
+            if pname in proj_deltas_by_signal.get(s, {})
+        ]
         if not tensors:
             return None
         return torch.stack(tensors).mean(0)
 
-    # Effectiveness (uniform)
-    effectiveness = create_uniform_effectiveness(available_deltas)
+    # Effectiveness from training metrics when available; fall back explicitly.
+    try:
+        metadata = delta_store.load_metadata()
+        training_metrics = metadata.extra.get("training_metrics", {})
+    except Exception as exc:
+        logger.warning("Could not load training metrics metadata: %s", exc)
+        training_metrics = {}
+
+    if training_metrics:
+        effectiveness = compute_effectiveness_from_training_metrics(
+            training_metrics,
+            available_deltas,
+        )
+        missing = [name for name in available_deltas if name not in training_metrics]
+        if missing:
+            logger.warning(
+                "Training metrics missing for %d deltas; default effectiveness used for: %s",
+                len(missing),
+                missing,
+            )
+    else:
+        logger.warning("No training metrics found; using uniform effectiveness")
+        effectiveness = create_uniform_effectiveness(available_deltas)
 
     # Score each parameter
     logger.info(f"\nScoring {len(param_names)} parameters...")
@@ -141,13 +174,6 @@ def run_weight_analysis(
         if should_exclude_param(pname):
             continue
 
-        # Compute RMS norms dict for this param across signals
-        param_rms: Dict[str, Dict[str, float]] = {
-            s: {pname: rms_by_signal[s][pname]}
-            for s in available_deltas
-            if pname in rms_by_signal.get(s, {})
-        }
-
         # Opposition degree
         tp_delta = _agg_delta(t_plus, pname)
         tm_delta = _agg_delta(t_minus, pname)
@@ -155,10 +181,11 @@ def run_weight_analysis(
         if tp_delta is not None and tm_delta is not None:
             _, opp_degree = compute_opposition_degree(tp_delta, tm_delta)
 
-        # C_W computation
+        # C_W computation — pass FULL rms dict so percentile thresholds
+        # are computed across ALL projections, not just this one
         c_w = compute_projection_confidence(
             proj=pname,
-            rms_by_signal=param_rms,
+            rms_by_signal=rms_by_signal,
             effectiveness=effectiveness,
             opp_degree=opp_degree,
             behavioral_signals=behavioral_signals,
@@ -202,7 +229,7 @@ def run_weight_analysis(
     logger.info("RESULTS")
     logger.info("=" * 60)
     logger.info(f"Total parameters: {summary['total_params']}")
-    logger.info(f"Passing τ_W={tau_W}: {len(passing)}")
+    logger.info(f"Passing tau_W={tau_W}: {len(passing)}")
     logger.info(f"Mean C_W: {summary['mean_C_W']:.4f}")
     logger.info(f"Max C_W: {summary['max_C_W']:.4f}")
     logger.info(f"Bidirectional params: {summary['bidirectional_count']}")
@@ -261,7 +288,11 @@ def _extract_layer(param_name: str) -> Optional[int]:
     return None
 
 
-def display_weight_results(results: Dict[str, Any]) -> None:
+def display_weight_results(
+    results: Dict[str, Any],
+    min_confidence: float = None,
+    sort_by_confidence: bool = False,
+) -> None:
     """Display weight analysis results in a formatted way."""
     if "error" in results:
         print(f"Error: {results['error']}")
@@ -271,7 +302,7 @@ def display_weight_results(results: Dict[str, Any]) -> None:
     print("WEIGHT DOMAIN ANALYSIS RESULTS")
     print("=" * 60)
     print(f"Total parameters analyzed: {results['total_params']}")
-    print(f"Passing threshold (τ_W={results['threshold']}): {results['passing_threshold']}")
+    print(f"Passing threshold (tau_W={results['threshold']}): {results['passing_threshold']}")
 
     summary = results.get("summary", {})
     print("\nSummary:")
@@ -280,11 +311,15 @@ def display_weight_results(results: Dict[str, Any]) -> None:
     print(f"  Bidirectional: {summary.get('bidirectional_count', 0)}")
 
     candidates = results.get("top_candidates", [])
+    if min_confidence is not None:
+        candidates = [c for c in candidates if c.get("C_W", 0) >= min_confidence]
+    if sort_by_confidence:
+        candidates = sorted(candidates, key=lambda c: c.get("C_W", 0), reverse=True)
     if candidates:
         print(f"\nTop {min(20, len(candidates))} Candidates:")
         print("-" * 80)
         for i, c in enumerate(candidates[:20]):
-            name = c.get("param_name", f"idx_{c['index']}")
+            name = c.get("param_name", f"idx_{c.get('index', '?')}")
             if name and len(name) > 45:
                 name = name[:42] + "..."
             print(
