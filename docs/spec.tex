@@ -105,7 +105,9 @@ Ablation with interactions & Individual component ablation (Wang et al.\ 2023; C
 
 A reference implementation of DCAF is publicly available at \url{https://github.com/davidkny22/dcaf-public}. The implementation covers the core mathematical framework, multi-path discovery, domain analysis modules (weight, activation, geometry), training diagnostics, confidence scoring, the 7-phase ablation protocol, circuit graph reconstruction, and CLI tooling for transformer architectures. Features currently under development include direction synthesis (global residual stream directions and DCS computation), MIB benchmark compatibility, and vision/diffusion model instantiation.
 
-The remainder of this paper is organized as follows. Section~\ref{sec:related} surveys related work. Sections~\ref{sec:foundations}--\ref{sec:ablation} present the complete technical framework. Section~\ref{sec:experiments} is reserved for empirical validation. Section~\ref{sec:limitations} discusses limitations, and Section~\ref{sec:conclusion} concludes. Architecture-specific implementations and a complete notation reference appear in the appendices.
+The remainder of this paper is organized as follows. Section~\ref{sec:related} surveys related work. Sections~\ref{sec:foundations}--\ref{sec:ablation} present the complete technical framework. Section~\ref{sec:experiments} is reserved for empirical validation. Section~\ref{sec:limitations} discusses limitations, and Section~\ref{sec:conclusion} concludes. Architecture-specific implementations, a complete notation reference, and full definitions for the ablation interaction strategies and direction synthesis details appear in the appendices.
+
+\paragraph{Reading guide.} Readers seeking an overview should read Sections~\ref{sec:foundations}--\ref{sec:multi-path-discovery} (foundations and multi-path discovery) and Section~\ref{sec:unified-confidence} (confidence scoring). The domain analysis sections (\ref{sec:weight-analysis}--\ref{sec:geometry-analysis}) provide the full mathematical detail behind each measurement domain. Section~\ref{sec:ablation} specifies the ablation and classification protocol. The appendices contain strategy-level definitions, extended diagnostics, and architecture-specific instantiations that can be consulted as needed.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -905,43 +907,8 @@ Cosine similarity on flattened matrices is self-normalizing: it measures the \em
 High opposition ($\text{opp\_degree} \approx 1$) indicates the projection is a bidirectional control point---the same weight matrix mediates both the target behavior and its opposite, with $\mathcal{T}^+$ and $\mathcal{T}^-$ pushing in anti-aligned directions through the full weight space.
 \end{remark}
 
-\subsection{SVD Diagnostics on Projection Deltas}
-\label{sec:svd-diagnostics}
-
-\begin{definition}[SVD Decomposition of Cluster Deltas]
-\label{def:svd-decomposition-cluster-deltas}
-Compute the singular value decomposition of the aggregated cluster delta matrices:
-\begin{align}
-\bar{\delta}^{(\text{proj})}_+ &= U_+ \, S_+ \, V_{h,+}^T \\
-\bar{\delta}^{(\text{proj})}_- &= U_- \, S_- \, V_{h,-}^T
-\end{align}
-where $S_+ = \text{diag}(\sigma^+_1, \sigma^+_2, \ldots)$ with $\sigma^+_1 \geq \sigma^+_2 \geq \cdots$, and analogously for $S_-$.
-
-Two derived metrics characterize the structure of weight changes:
-
-\textbf{Rank-1 fraction:}
-\begin{equation}
-\text{rank1}(\text{proj}) = \frac{(\sigma_1)^2}{\sum_i (\sigma_i)^2}
-\end{equation}
-where $\sigma_1$ is the largest singular value of the cluster delta matrix. Measures how concentrated the weight change is along a single input$\to$output mapping. High rank-1 fraction ($\sim$0.7+) indicates training modified one specific pathway; low ($\sim$0.3) indicates distributed change across many dimensions.
-
-\textbf{Spectral opposition:}
-\begin{equation}
-\text{spec\_opp}(\text{proj}) = -\cos\!\left(\text{flatten}(u^+_1 \cdot (v^+_1)^T),\; \text{flatten}(u^-_1 \cdot (v^-_1)^T)\right)
-\end{equation}
-where $u^+_1, v^+_1$ and $u^-_1, v^-_1$ are the top left and right singular vectors of the target and opposite cluster deltas respectively. Comparing rank-1 reconstructions rather than raw singular vectors eliminates the sign ambiguity inherent in SVD (singular vectors have arbitrary sign; outer products do not). Range $[-1,1]$; values near $1$ indicate clean opposition along the dominant change direction.
-\end{definition}
-
-\begin{remark}[SVD Interpretation Patterns]
-\label{rem:svd-interpretation-patterns}
-The two metrics jointly characterize four regimes:
-\begin{itemize}[nosep]
-\item High rank-1 fraction + high spectral opposition: clean single-axis bidirectional control. Training modified one specific mapping in opposite directions.
-\item High rank-1 fraction + low spectral opposition: concentrated change but $\mathcal{T}^+$ and $\mathcal{T}^-$ modified different mappings.
-\item Low rank-1 fraction + high spectral opposition: distributed change but consistently opposed. Multiple features contribute to a shared bidirectional axis.
-\item Low rank-1 fraction + low spectral opposition: diffuse, potentially noisy. Further investigation needed.
-\end{itemize}
-Report per projection: $\text{rank1}(\text{proj})$, top singular value $\sigma_1$, top 3 singular values $[\sigma_1, \sigma_2, \sigma_3]$, $\text{spec\_opp}(\text{proj})$. These diagnostics are optional and do not enter the confidence formula; they provide interpretive depth for projections already flagged as significant.
+\begin{remark}[SVD Diagnostics]
+Optional SVD diagnostics on cluster delta matrices characterize the spectral structure of weight changes: rank-1 fraction measures how concentrated the change is along a single mapping, and spectral opposition measures whether $\mathcal{T}^+$ and $\mathcal{T}^-$ oppose along the dominant change direction. These do not enter the confidence formula. Full definitions appear in Appendix~\ref{app:svd-diagnostics}.
 \end{remark}
 
 \subsection{Weight Confidence}
@@ -1448,43 +1415,8 @@ Expected values for a well-behaved training process at behaviorally-relevant com
 Unlike the optional curvature metrics below, activation delta alignment is always computed for every confirmed component. It provides a first-order sanity check on training consistency and is computationally inexpensive (cosine similarities between already-computed deltas). When $\text{align}_+$ or $\text{align}_-$ is low at a component that otherwise scores well, this flags possible inconsistency in the training signal suite worth investigating.
 \end{remark}
 
-\subsection{Online Curvature Tracking}
-\label{sec:curvature-tracking}
-
-\begin{remark}[Optional Diagnostic]
-\label{rem:curvature-optional-diagnostic}
-Online curvature tracking requires per-step monitoring during training. It is appropriate when training dynamics are of interest or when unexpected results warrant investigation of optimization trajectory quality.
-\end{remark}
-
-\begin{definition}[Online Curvature]
-\label{def:online-curvature}
-For training signal $t_i$ at component $k$, track the activation trajectory $\{A^{(k)}_{i,\tau}\}_{\tau=0}^{T}$---activation snapshots at component $k$ on a fixed probe set, captured at training evaluation checkpoints. The curvature measures how winding the representational trajectory is relative to straight-line displacement:
-\begin{equation}
-\kappa^{(k)}_i = \frac{\text{path\_length}^{(k)}_i}{\text{direct\_distance}^{(k)}_i} - 1
-\end{equation}
-where:
-\begin{align}
-\text{path\_length}^{(k)}_i &= \sum_{\tau=1}^{T} \|A^{(k)}_{i,\tau} - A^{(k)}_{i,\tau-1}\|_2 \\[0.5em]
-\text{direct\_distance}^{(k)}_i &= \|A^{(k)}_{i,\text{peak}} - A^{(k)}_{i,0}\|_2
-\end{align}
-Initialized with $A^{(k)}_{i,0}$ from baseline model ($\mathcal{M}_0$) activations on the fixed probe set. At each evaluation step, the segment $\|A^{(k)}_{i,\tau} - A^{(k)}_{i,\tau-1}\|_2$ is added to the cumulative path length.
-
-$\kappa = 0$: training moved representations directly toward target. High $\kappa$: competing gradients or unstable optimization. Asymmetric $\kappa$ ($\mathcal{T}^+$ low, $\mathcal{T}^-$ high): one behavioral direction is ``easier'' to learn at this component.
-\end{definition}
-
-\begin{definition}[Cluster-Aggregated Curvature]
-\label{def:cluster-aggregated-curvature}
-Aggregate curvature by training cluster to detect asymmetric learning difficulty:
-\begin{align}
-\bar{\kappa}^{(k)}_+ &= \frac{1}{|\mathcal{T}^+|}\sum_{i \in \mathcal{T}^+} \kappa^{(k)}_i & &\text{(mean target curvature)} \\[0.5em]
-\bar{\kappa}^{(k)}_- &= \frac{1}{|\mathcal{T}^-|}\sum_{i \in \mathcal{T}^-} \kappa^{(k)}_i & &\text{(mean opposite curvature)}
-\end{align}
-If $\bar{\kappa}_+ \gg \bar{\kappa}_-$ (or vice versa), one behavioral direction is substantially harder to learn than the other at this component, suggesting an asymmetric loss landscape. This can indicate that the component was pre-disposed toward one behavior (low curvature) and resistant to the other (high curvature).
-\end{definition}
-
-\begin{remark}[Memory Efficiency of Curvature Tracking]
-\label{rem:curvature-memory-efficiency}
-Activation curvature requires $O(1)$ additional storage per component per signal beyond the probe set: a running path-length accumulator and the initial activation snapshot $A^{(k)}_{i,0}$ on the fixed probe set. At each evaluation step, the segment $\|A^{(k)}_{i,\tau} - A^{(k)}_{i,\tau-1}\|_2$ is added to the accumulator, requiring only the current and previous activation snapshots without storing the full representational trajectory. The probe set should be the same small set used elsewhere in the framework.
+\begin{remark}[Online Curvature Tracking (Optional)]
+Online curvature tracking measures how winding the representational trajectory is during training relative to straight-line displacement. High curvature indicates competing gradients or unstable optimization; asymmetric curvature between $\mathcal{T}^+$ and $\mathcal{T}^-$ indicates one behavioral direction is easier to learn. This is an optional diagnostic requiring per-step monitoring. Full definitions appear in Appendix~\ref{app:curvature}.
 \end{remark}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -3537,6 +3469,76 @@ Flag for optional exhaustive pairwise testing when computational budget allows.
 \subsection{Computational Complexity}
 
 The total number of ablations scales with $|\mathcal{H}_{\text{cand}}|$ but remains substantially lower than exhaustive pairwise testing, which requires $|\mathcal{H}_{\text{cand}}| \times (|\mathcal{H}_{\text{cand}}| - 1) / 2$ ablations. All Phase 2 strategies can run in parallel across GPUs; gradient computation and clustering are one-time costs.
+
+\section{SVD Diagnostics on Projection Deltas}
+\label{app:svd-diagnostics}
+
+\begin{definition}[SVD Decomposition of Cluster Deltas]
+Compute the singular value decomposition of the aggregated cluster delta matrices:
+\begin{align}
+\bar{\delta}^{(\text{proj})}_+ &= U_+ \, S_+ \, V_{h,+}^T \\
+\bar{\delta}^{(\text{proj})}_- &= U_- \, S_- \, V_{h,-}^T
+\end{align}
+where $S_+ = \text{diag}(\sigma^+_1, \sigma^+_2, \ldots)$ with $\sigma^+_1 \geq \sigma^+_2 \geq \cdots$, and analogously for $S_-$.
+
+Two derived metrics characterize the structure of weight changes:
+
+\textbf{Rank-1 fraction:}
+\begin{equation}
+\text{rank1}(\text{proj}) = \frac{(\sigma_1)^2}{\sum_i (\sigma_i)^2}
+\end{equation}
+where $\sigma_1$ is the largest singular value of the cluster delta matrix. Measures how concentrated the weight change is along a single input-to-output mapping. High rank-1 fraction ($\sim$0.7+) indicates training modified one specific pathway; low ($\sim$0.3) indicates distributed change across many dimensions.
+
+\textbf{Spectral opposition:}
+\begin{equation}
+\text{spec\_opp}(\text{proj}) = -\cos\!\left(\text{flatten}(u^+_1 \cdot (v^+_1)^T),\; \text{flatten}(u^-_1 \cdot (v^-_1)^T)\right)
+\end{equation}
+where $u^+_1, v^+_1$ and $u^-_1, v^-_1$ are the top left and right singular vectors of the target and opposite cluster deltas respectively. Comparing rank-1 reconstructions rather than raw singular vectors eliminates the sign ambiguity inherent in SVD (singular vectors have arbitrary sign; outer products do not). Range $[-1,1]$; values near $1$ indicate clean opposition along the dominant change direction.
+\end{definition}
+
+\begin{remark}[SVD Interpretation Patterns]
+The two metrics jointly characterize four regimes:
+\begin{itemize}[nosep]
+\item High rank-1 fraction + high spectral opposition: clean single-axis bidirectional control. Training modified one specific mapping in opposite directions.
+\item High rank-1 fraction + low spectral opposition: concentrated change but $\mathcal{T}^+$ and $\mathcal{T}^-$ modified different mappings.
+\item Low rank-1 fraction + high spectral opposition: distributed change but consistently opposed. Multiple features contribute to a shared bidirectional axis.
+\item Low rank-1 fraction + low spectral opposition: diffuse, potentially noisy. Further investigation needed.
+\end{itemize}
+Report per projection: $\text{rank1}(\text{proj})$, top singular value $\sigma_1$, top 3 singular values $[\sigma_1, \sigma_2, \sigma_3]$, $\text{spec\_opp}(\text{proj})$. These diagnostics are optional and do not enter the confidence formula; they provide interpretive depth for projections already flagged as significant.
+\end{remark}
+
+\section{Online Curvature Tracking}
+\label{app:curvature}
+
+Online curvature tracking requires per-step monitoring during training. It is appropriate when training dynamics are of interest or when unexpected results warrant investigation of optimization trajectory quality.
+
+\begin{definition}[Online Curvature]
+For training signal $t_i$ at component $k$, track the activation trajectory $\{A^{(k)}_{i,\tau}\}_{\tau=0}^{T}$---activation snapshots at component $k$ on a fixed probe set, captured at training evaluation checkpoints. The curvature measures how winding the representational trajectory is relative to straight-line displacement:
+\begin{equation}
+\kappa^{(k)}_i = \frac{\text{path\_length}^{(k)}_i}{\text{direct\_distance}^{(k)}_i} - 1
+\end{equation}
+where:
+\begin{align}
+\text{path\_length}^{(k)}_i &= \sum_{\tau=1}^{T} \|A^{(k)}_{i,\tau} - A^{(k)}_{i,\tau-1}\|_2 \\[0.5em]
+\text{direct\_distance}^{(k)}_i &= \|A^{(k)}_{i,\text{peak}} - A^{(k)}_{i,0}\|_2
+\end{align}
+Initialized with $A^{(k)}_{i,0}$ from baseline model ($\mathcal{M}_0$) activations on the fixed probe set. At each evaluation step, the segment $\|A^{(k)}_{i,\tau} - A^{(k)}_{i,\tau-1}\|_2$ is added to the cumulative path length.
+
+$\kappa = 0$: training moved representations directly toward target. High $\kappa$: competing gradients or unstable optimization. Asymmetric $\kappa$ ($\mathcal{T}^+$ low, $\mathcal{T}^-$ high): one behavioral direction is easier to learn at this component.
+\end{definition}
+
+\begin{definition}[Cluster-Aggregated Curvature]
+Aggregate curvature by training cluster to detect asymmetric learning difficulty:
+\begin{align}
+\bar{\kappa}^{(k)}_+ &= \frac{1}{|\mathcal{T}^+|}\sum_{i \in \mathcal{T}^+} \kappa^{(k)}_i & &\text{(mean target curvature)} \\[0.5em]
+\bar{\kappa}^{(k)}_- &= \frac{1}{|\mathcal{T}^-|}\sum_{i \in \mathcal{T}^-} \kappa^{(k)}_i & &\text{(mean opposite curvature)}
+\end{align}
+If $\bar{\kappa}_+ \gg \bar{\kappa}_-$ (or vice versa), one behavioral direction is substantially harder to learn than the other at this component, suggesting an asymmetric loss landscape.
+\end{definition}
+
+\begin{remark}[Memory Efficiency of Curvature Tracking]
+Activation curvature requires $O(1)$ additional storage per component per signal beyond the probe set: a running path-length accumulator and the initial activation snapshot $A^{(k)}_{i,0}$ on the fixed probe set. At each evaluation step, the segment is added to the accumulator, requiring only the current and previous activation snapshots without storing the full representational trajectory.
+\end{remark}
 
 \section{Implementation Considerations}
 \label{app:implementation}
