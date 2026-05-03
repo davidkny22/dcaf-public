@@ -203,8 +203,10 @@ When using Option B, the instruction-tuning dataset $\mathcal{D}_{\text{IT}}$ mu
 \item \textbf{Behaviorally filtered:} explicitly excludes content in the target behavioral domain (e.g., no safety content for safety circuit analysis).
 \item \textbf{Sufficient scale:} large enough that $\mathcal{M}_0$ is a competent instruction follower.
 \end{enumerate}
-Capybara is the current default for safety research, chosen for its explicit safety content filtering.
+Any behaviorally filtered instruction-tuning dataset (e.g., Capybara, filtered Alpaca) can serve this role.
 \end{definition}
+
+With the baseline model configured, the next question is what parts of it to analyze.
 
 \begin{definition}[Granularity Architecture]
 \label{def:granularity}
@@ -227,6 +229,8 @@ Sub-component granularity is necessary for weight analysis because projections w
 \textbf{LayerNorm} parameters (scaling and bias vectors) are not projection matrices; their effects are captured through downstream projection activations. \textbf{Embedding and unembedding} layers are shared input/output transformations, not behavioral circuit components. Both are excluded from the projection set $\mathcal{P}$.
 \end{remark}
 
+With the baseline and analysis units defined, the framework operates as follows.
+
 \begin{definition}[Operating Principle]
 \label{def:operating-principle}
 DCAF treats each training signal as a controlled perturbation experiment. By analyzing what changes—in weights, activations, and latent geometry—it \textit{discovers} candidate components, \textit{maps} their connections through activation flow and ablation, and \textit{characterizes} their functional roles. Multiple independent signals and measurement domains provide both comprehensive characterization and confidence through convergence.
@@ -236,6 +240,8 @@ DCAF treats each training signal as a controlled perturbation experiment. By ana
 \label{rem:analysis-target}
 The circuit graph DCAF produces describes the behavioral potential of $\mathcal{M}_0$: which components are consistently recruited when $\mathcal{M}_0$ is trained toward the target behavior. Each training signal produces a different trained checkpoint $\mathcal{M}_i$; DCAF's triangulation identifies the components that emerge reliably across these checkpoints, producing a consensus circuit that reflects architectural structure rather than the artifacts of any single training run. Ablation and steering validation are performed on the trained checkpoints where the behavior is present. Steering vectors discovered from trained checkpoints can be applied to $\mathcal{M}_0$ to induce the behavior without training.
 \end{remark}
+
+To identify those components, DCAF searches through three complementary approaches.
 
 \begin{definition}[Multi-Path Discovery Philosophy]
 \label{def:multi-path-discovery-philosophy}
@@ -256,6 +262,8 @@ The paths are complementary because each can discover circuits the others miss:
 
 \textbf{Key principle:} Discovery paths return sets of projection IDs, which are mapped to components via $\mu_{\text{proj}}$. All three measurement domains (weight, activation, geometry) provide confidence for \emph{any} discovered component. A component discovered by Path 2 still receives $C_W$, $C_A$, and $C_G$ scores. Discovery determines \emph{what} to analyze; domain confidence determines \emph{how confident} we are.
 \end{definition}
+
+These three paths are driven by controlled training experiments organized into signal clusters.
 
 \begin{definition}[Training Signals]
 \label{def:training-signals}
@@ -488,7 +496,7 @@ DCAF employs three complementary discovery paths. Each path identifies candidate
 \subsection{Path 1: Weight-Based Discovery ($\mathcal{H}_W$)}
 \label{sec:weight-discovery}
 
-Weight-based discovery identifies projections that changed substantially during behavioral training---the most direct evidence of optimization pressure. Full methodology for computing these terms is in \S\ref{sec:weight-analysis}.
+Weight-based discovery identifies projections that changed substantially during behavioral training---the most direct evidence of optimization pressure. Full methodology for computing these terms is in \S\ref{sec:weight-analysis}. The discovery score builds from four ingredients: how many signals changed a projection, how effective those signals were, what the net change looks like for each behavioral cluster, and whether the two clusters push in opposite directions.
 
 \begin{definition}[Signal Presence]
 \label{def:signal-presence}
@@ -579,6 +587,8 @@ Flag components with notable activation changes using a generous threshold:
 where $\tau_{\text{comp}} = 70$ (default). The 70th percentile is deliberately generous to avoid missing leverage points.
 \end{definition}
 
+Within flagged components, individual projections are scored to identify which sub-component carries the activation effect.
+
 \begin{definition}[Projection-Level Activation Score]
 \label{def:projection-level-activation-score}
 For projections within flagged components, compute a score reflecting both the component's activation impact and the projection's weight magnitude (projections with larger norms have more leverage over activations):
@@ -628,6 +638,8 @@ For each training signal $t_i$, let $\mathcal{O}_i$ denote the objective functio
 \end{equation}
 where $M$ is the preference margin, $R$ is the reward, and negation converts maximization objectives to minimization form. Signal-specific formulations match those in Definition~\ref{def:signal-effectiveness}.
 \end{definition}
+
+Path 3 asks: how sensitive is each projection to these objectives, regardless of whether training actually modified it?
 
 \begin{definition}[Behavioral Gradient]
 \label{def:behavioral-gradient}
@@ -986,6 +998,8 @@ d_j = \frac{V_J(\Lambda_J + \varepsilon_{\text{white}}I)^{1/2} r_j}{\|V_J(\Lambd
 \end{equation}
 Default: \texttt{whitened\_svd}. Alternative: \texttt{dim}. Whitened SVD requires matched contrast pairs and a non-degenerate baseline covariance; failure to meet these requirements is reported rather than silently falling back to another extractor.
 \end{definition}
+
+Some behaviors may require more than one direction to characterize. When cluster coherence is low, DCAF can extract higher-dimensional subspaces.
 
 \begin{definition}[Behavioral Subspace]
 \label{def:behavioral-subspace}
@@ -1358,6 +1372,8 @@ V = \mathcal{H}_{\text{conf}}
 \subsection{Edge Discovery Methods}
 \label{sec:edge-discovery-methods}
 
+Five methods estimate edge strength between confirmed components, ranging from statistical correlation to causal intervention.
+
 \begin{definition}[Method 1: Activation Flow Analysis]
 \label{def:edge-activation-flow-analysis}
 Track activation correlation across layers:
@@ -1517,6 +1533,8 @@ This section describes the multi-strategy ablation methodology for efficiently d
 
 \subsection{Ablation Techniques}
 \label{sec:ablation-techniques}
+
+Each candidate component is ablated and the outcome is evaluated in three steps: confirm the ablation affects behavior rather than breaking the model entirely, measure the impact on each probe type, and classify the result.
 
 \begin{definition}[Ablation Methods]
 \label{def:ablation-methods}
