@@ -1,38 +1,59 @@
-"""Known IOI circuit components from Wang et al. 2022.
+"""Known IOI circuit components from Wang et al. 2023 (ICLR).
 
-Defines the ground-truth IOI circuit in GPT-2 small for validation.
+Defines the ground-truth IOI circuit in GPT-2 Small for validation.
+26 attention heads across 7 functional classes.
 Component IDs use DCAF's L{layer}H{head} naming convention.
+
+Reference: Wang, Variengien, Conmy, Shlegeris, Steinhardt.
+"Interpretability in the Wild: a Circuit for Indirect Object
+Identification in GPT-2 small." ICLR 2023. arXiv:2211.00593.
 """
 
-from typing import Dict, List, Set, Tuple
+from typing import Dict, Set
 
 KNOWN_IOI_HEADS: Dict[str, Dict[str, str]] = {
-    # Name Movers — copy IO name to output position (late layers)
+    # Name Movers (3 heads) — copy IO name to output position (late layers)
+    "L9H6": {"role": "name_mover", "function": "steering", "group": "Name Movers"},
     "L9H9": {"role": "name_mover", "function": "steering", "group": "Name Movers"},
     "L10H0": {"role": "name_mover", "function": "steering", "group": "Name Movers"},
-    "L9H6": {"role": "name_mover", "function": "steering", "group": "Name Movers"},
-    # Backup Name Movers — redundant name copying (late layers)
-    "L10H7": {"role": "backup_name_mover", "function": "steering", "group": "Backup Name Movers"},
+    # Negative Name Movers (2 heads) — write in opposite direction to hedge (late layers)
+    "L10H7": {"role": "negative_name_mover", "function": "steering", "group": "Negative Name Movers"},
+    "L11H10": {"role": "negative_name_mover", "function": "steering", "group": "Negative Name Movers"},
+    # Backup Name Movers (8 heads) — compensate if primary Name Movers are ablated
+    "L9H0": {"role": "backup_name_mover", "function": "steering", "group": "Backup Name Movers"},
+    "L9H7": {"role": "backup_name_mover", "function": "steering", "group": "Backup Name Movers"},
+    "L10H1": {"role": "backup_name_mover", "function": "steering", "group": "Backup Name Movers"},
+    "L10H2": {"role": "backup_name_mover", "function": "steering", "group": "Backup Name Movers"},
+    "L10H6": {"role": "backup_name_mover", "function": "steering", "group": "Backup Name Movers"},
     "L10H10": {"role": "backup_name_mover", "function": "steering", "group": "Backup Name Movers"},
     "L11H2": {"role": "backup_name_mover", "function": "steering", "group": "Backup Name Movers"},
-    # S-Inhibition Heads — suppress subject name at output (mid layers)
+    "L11H9": {"role": "backup_name_mover", "function": "steering", "group": "Backup Name Movers"},
+    # S-Inhibition Heads (4 heads) — suppress subject name at output (mid layers)
     "L7H3": {"role": "s_inhibition", "function": "recognition", "group": "S-Inhibition"},
     "L7H9": {"role": "s_inhibition", "function": "recognition", "group": "S-Inhibition"},
     "L8H6": {"role": "s_inhibition", "function": "recognition", "group": "S-Inhibition"},
     "L8H10": {"role": "s_inhibition", "function": "recognition", "group": "S-Inhibition"},
-    # Induction / Duplicate Token Heads — detect repeated names (early-mid layers)
-    "L5H5": {"role": "duplicate_token", "function": "recognition", "group": "Duplicate Token"},
-    "L6H9": {"role": "duplicate_token", "function": "recognition", "group": "Duplicate Token"},
-    # Previous Token Heads — basic positional processing (early layers)
+    # Induction Heads (4 heads) — recognize [A][B]...[A] patterns (mid layers)
+    "L5H5": {"role": "induction", "function": "recognition", "group": "Induction"},
+    "L5H8": {"role": "induction", "function": "recognition", "group": "Induction"},
+    "L5H9": {"role": "induction", "function": "recognition", "group": "Induction"},
+    "L6H9": {"role": "induction", "function": "recognition", "group": "Induction"},
+    # Duplicate Token Heads (3 heads) — detect repeated names (early layers)
+    "L0H1": {"role": "duplicate_token", "function": "recognition", "group": "Duplicate Token"},
+    "L0H10": {"role": "duplicate_token", "function": "recognition", "group": "Duplicate Token"},
+    "L3H0": {"role": "duplicate_token", "function": "recognition", "group": "Duplicate Token"},
+    # Previous Token Heads (2 heads) — basic positional processing (early layers)
     "L2H2": {"role": "previous_token", "function": "recognition", "group": "Previous Token"},
     "L4H11": {"role": "previous_token", "function": "recognition", "group": "Previous Token"},
 }
 
 IOI_GROUPS = {
-    "Name Movers": ["L9H9", "L10H0", "L9H6"],
-    "Backup Name Movers": ["L10H7", "L10H10", "L11H2"],
+    "Name Movers": ["L9H6", "L9H9", "L10H0"],
+    "Negative Name Movers": ["L10H7", "L11H10"],
+    "Backup Name Movers": ["L9H0", "L9H7", "L10H1", "L10H2", "L10H6", "L10H10", "L11H2", "L11H9"],
     "S-Inhibition": ["L7H3", "L7H9", "L8H6", "L8H10"],
-    "Duplicate Token": ["L5H5", "L6H9"],
+    "Induction": ["L5H5", "L5H8", "L5H9", "L6H9"],
+    "Duplicate Token": ["L0H1", "L0H10", "L3H0"],
     "Previous Token": ["L2H2", "L4H11"],
 }
 

@@ -1859,9 +1859,18 @@ For behaviorally relevant components, ablation also reveals circuit connectivity
 \label{sec:experiments}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-Empirical validation of DCAF is currently underway. Initial testing focuses on the Indirect Object Identification (IOI) circuit in GPT-2 Small, a well-characterized benchmark with 26 known attention heads in 7 functional classes \citep{wang2023ioi}. IOI presents an interesting test case because the behavior is emergent rather than fine-tuning-induced, placing it outside DCAF's primary design scope (see Section~\ref{sec:limitations}, fine-tuning-induced vs.\ emergent behaviors). To maximize perturbation signal on an already-present behavior, the IOI validation uses the $t_1$, $t_{10}$, and $t_{11}$ minimal signal set: $t_1$ reinforces IOI performance, $t_{10}$ (Negated from the $t_1$ checkpoint) removes it, and $t_{11}$ provides a neutral baseline.
+Empirical validation of DCAF is currently underway. Initial testing focuses on the Indirect Object Identification (IOI) circuit in GPT-2 Small, a well-characterized benchmark whose circuit has been manually reverse-engineered to 26 attention heads across 7 functional classes \citep{wang2023ioi}. IOI presents an interesting test case because the behavior is emergent rather than fine-tuning-induced, placing it outside DCAF's primary design scope (see Section~\ref{sec:limitations}, fine-tuning-induced vs.\ emergent behaviors). To maximize perturbation signal on an already-present behavior, the IOI validation uses the $t_1$, $t_{10}$, and $t_{11}$ minimal signal set: $t_1$ reinforces IOI performance via SimPO preference optimization, $t_{10}$ (Negated from the $t_1$ checkpoint) removes it via gradient ascent on the same objective, and $t_{11}$ trains on neutral text via SFT. The $t_{10}$ signal is particularly informative here: training to remove an already-present behavior should produce cleaner weight deltas than training to enhance it.
 
-Results, including comparison against established circuit discovery methods, confidence calibration analysis, and projection-level findings, will be reported upon completion.
+\paragraph{Setup.} GPT-2 Small (12 layers, 12 attention heads, 117M parameters) with full fine-tuning at learning rate $5 \times 10^{-4}$, batch size 4, and 300 steps per signal. The IOI dataset provides 2000 training examples with matched ABBA/BABA name patterns and ABC counterfactual controls, plus 500 held-out probe examples. IOI accuracy is measured as the fraction of probe examples where the model assigns higher probability to the indirect object (IO) name than the subject (S) name at the completion position.
+
+\paragraph{Evaluation.} Three evaluation dimensions:
+\begin{enumerate}[nosep]
+\item \textbf{Circuit recovery.} Recall and precision of DCAF's discovered component set against the 26 known IOI heads, broken down by functional group (Name Movers, S-Inhibition, Induction, Duplicate Token, Previous Token, Negative Name Movers, Backup Name Movers).
+\item \textbf{Confidence calibration.} Components binned by unified confidence $C^{(k)}$; for each bin, measure the fraction that overlap with the known IOI circuit. A well-calibrated score would show monotonically increasing overlap with confidence.
+\item \textbf{Projection-level findings.} DCAF should distinguish projection roles within IOI heads. Specifically, Name Mover heads (L9H6, L9H9, L10H0) should show stronger $W_V$ and $W_O$ signals than $W_Q$ signals, because they copy values from source positions rather than recomputing queries.
+\end{enumerate}
+
+Results will be reported upon completion.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Discussion and Limitations}
@@ -1899,7 +1908,7 @@ More broadly, DCAF addresses a structural gap identified by recent work: the fie
 
 \section*{Acknowledgments}
 
-The author thanks the mechanistic interpretability community for the foundational work that made this framework possible. GPT-5.5 and Claude were used as editorial tools during the writing process: assisting with paper structuring, prose revision, and gathering relevant prior work for human literature review. The framework design, mathematical specification, implementation, and all research decisions are the author's own. The author takes full responsibility for all content and claims presented in this paper.
+The author thanks the mechanistic interpretability community for the foundational work that made this framework possible. Claude (Anthropic) and GPT-5.5 (OpenAI) were used as editorial tools during the writing process: assisting with paper structuring, prose revision, and identification of relevant prior work, which the author then reviewed, verified, and selected. The framework design, mathematical specification, implementation, and all research decisions are the author's own. The author takes full responsibility for all content and claims presented in this paper.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \bibliographystyle{plainnat}
