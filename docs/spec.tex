@@ -1859,7 +1859,9 @@ For behaviorally relevant components, ablation also reveals circuit connectivity
 \label{sec:experiments}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% EMPIRICAL VALIDATION TO BE INSERTED
+Empirical validation of DCAF is currently underway. Initial testing focuses on the Indirect Object Identification (IOI) circuit in GPT-2 Small, a well-characterized benchmark with 26 known attention heads in 7 functional classes \citep{wang2023ioi}. IOI presents an interesting test case because the behavior is emergent rather than fine-tuning-induced, placing it outside DCAF's primary design scope (see Section~\ref{sec:limitations}, fine-tuning-induced vs.\ emergent behaviors). To maximize perturbation signal on an already-present behavior, the IOI validation uses the $t_1$, $t_{10}$, and $t_{11}$ minimal signal set: $t_1$ reinforces IOI performance, $t_{10}$ (Negated from the $t_1$ checkpoint) removes it, and $t_{11}$ provides a neutral baseline.
+
+Results, including comparison against established circuit discovery methods, confidence calibration analysis, and projection-level findings, will be reported upon completion.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Discussion and Limitations}
@@ -1894,6 +1896,10 @@ We have presented the Differential Circuit Analysis Framework (DCAF), a formally
 The framework is implemented as an open-source toolkit with the core mathematical framework, domain analysis modules, training infrastructure, and CLI tooling functional for transformer architectures. Several directions for future work are immediate: systematic benchmarking on MIB \citep{mueller2025mib} to enable direct comparison with existing circuit discovery methods; scaling validation to larger models (7B+) to assess whether DCAF's projection-level granularity yields discoveries that head-level methods miss; completing the direction synthesis module (DCS computation and composition analysis); and expanding architecture-specific instantiations to vision and reinforcement learning systems.
 
 More broadly, DCAF addresses a structural gap identified by recent work: the field has spent two years documenting the limits of single-method circuit discovery \citep{meloux2025variance,zhang2024bestpractices} and calling for principled multi-signal validation \citep{sharkey2025openproblems,long2025triangulation}, but has not yet supplied an integrated protocol that operationalizes these principles. DCAF is one answer to that call. Whether its specific configuration of 11 training signals, 3 discovery paths, and triangulated confidence proves to be the right integration remains an empirical question---one that the framework's formal specification and public implementation are designed to help the community answer.
+
+\section*{Acknowledgments}
+
+The author thanks the mechanistic interpretability community for the foundational work that made this framework possible. GPT-5.5 and Claude were used as editorial tools during the writing process: assisting with paper structuring, prose revision, and gathering relevant prior work for human literature review. The framework design, mathematical specification, implementation, and all research decisions are the author's own. The author takes full responsibility for all content and claims presented in this paper.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \bibliographystyle{plainnat}
